@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI Analysis — Sign in</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="auth-wrap">
+
+  <section class="auth-hero">
+    <div class="brand" style="margin-bottom:26px">
+      <div class="brand-mark">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 2v4M12 18v4M4.9 4.9l2.8 2.8M16.3 16.3l2.8 2.8M2 12h4M18 12h4M4.9 19.1l2.8-2.8M16.3 7.7l2.8-2.8"/>
+          <circle cx="12" cy="12" r="3.2"/>
+        </svg>
+      </div>
+      <div>
+        <div class="brand-name">AI Analysis</div>
+        <div class="brand-sub">Document Intelligence</div>
+      </div>
+    </div>
+
+    <span class="eyebrow"><span class="dot"></span> Secure &amp; private workspace</span>
+    <h1>Your documents,<br><span class="grad">analysed intelligently.</span></h1>
+    <p>Upload anything, keep it organised, and track your workspace at a glance. Every file is scoped to your account only.</p>
+
+    <ul class="feat-list">
+      <li>
+        <span class="feat-ico"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>
+        <span><b>Per-user isolation</b><span>Documents are keyed to your user id — nobody else can read them.</span></span>
+      </li>
+      <li>
+        <span class="feat-ico"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5-5 5 5M12 5v12"/></svg></span>
+        <span><b>Upload anything</b><span>PDFs, sheets, images, archives — stored safely in MongoDB GridFS.</span></span>
+      </li>
+      <li>
+        <span class="feat-ico"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 15l4-5 3 3 5-7"/></svg></span>
+        <span><b>Live dashboard</b><span>Totals, storage used and weekly activity, updated instantly.</span></span>
+      </li>
+    </ul>
+  </section>
+
+  <section class="auth-card glass">
+    <div class="brand">
+      <div class="brand-mark">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 2v4M12 18v4M4.9 4.9l2.8 2.8M16.3 16.3l2.8 2.8M2 12h4M18 12h4M4.9 19.1l2.8-2.8M16.3 7.7l2.8-2.8"/>
+          <circle cx="12" cy="12" r="3.2"/>
+        </svg>
+      </div>
+      <div>
+        <div class="brand-name">Welcome back</div>
+        <div class="brand-sub">AI Analysis</div>
+      </div>
+    </div>
+
+    <div class="tabs">
+      <button class="tab active" data-pane="signin" type="button">Sign In</button>
+      <button class="tab" data-pane="signup" type="button">Sign Up</button>
+    </div>
+
+    <div id="alert" class="alert"></div>
+
+    <!-- sign in -->
+    <form class="pane active" id="signin" novalidate>
+      <div class="field">
+        <label for="li-email">Email address</label>
+        <input class="ctrl" id="li-email" type="email" autocomplete="email" placeholder="you@company.com" required>
+      </div>
+      <div class="field">
+        <label for="li-pass">Password</label>
+        <input class="ctrl" id="li-pass" type="password" autocomplete="current-password" placeholder="••••••••" required>
+      </div>
+      <button class="btn btn-primary" type="submit">Sign in</button>
+      <p class="hint">New here? <a href="#" data-goto="signup">Create an account</a></p>
+    </form>
+
+    <!-- sign up -->
+    <form class="pane" id="signup" novalidate>
+      <div class="field">
+        <label for="su-name">Full name</label>
+        <input class="ctrl" id="su-name" type="text" autocomplete="name" placeholder="Aman Kumar" required>
+      </div>
+      <div class="field">
+        <label for="su-email">Email address</label>
+        <input class="ctrl" id="su-email" type="email" autocomplete="email" placeholder="you@company.com" required>
+      </div>
+      <div class="field">
+        <label for="su-phone">Phone number</label>
+        <input class="ctrl" id="su-phone" type="tel" autocomplete="tel" placeholder="+91 98765 43210" required>
+      </div>
+      <div class="row2">
+        <div class="field">
+          <label for="su-pass">New password</label>
+          <input class="ctrl" id="su-pass" type="password" autocomplete="new-password" placeholder="Min 6 characters" required>
+        </div>
+        <div class="field">
+          <label for="su-pass2">Confirm password</label>
+          <input class="ctrl" id="su-pass2" type="password" autocomplete="new-password" placeholder="Repeat password" required>
+        </div>
+      </div>
+      <button class="btn btn-primary" type="submit">Create account</button>
+      <p class="hint">Already registered? <a href="#" data-goto="signin">Sign in instead</a></p>
+    </form>
+  </section>
+</div>
+
+<script>
+const $ = (s, r = document) => r.querySelector(s);
+const alertBox = $('#alert');
+
+function show(msg, kind = 'err') {
+  alertBox.textContent = msg;
+  alertBox.className = 'alert show ' + kind;
+}
+function clearAlert() { alertBox.className = 'alert'; }
+
+function switchTo(name) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.pane === name));
+  document.querySelectorAll('.pane').forEach(p => p.classList.toggle('active', p.id === name));
+  clearAlert();
+}
+document.querySelectorAll('.tab').forEach(t => t.onclick = () => switchTo(t.dataset.pane));
+document.querySelectorAll('[data-goto]').forEach(a => a.onclick = e => { e.preventDefault(); switchTo(a.dataset.goto); });
+
+async function post(url, body, btn) {
+  const original = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spin"></span> Please wait';
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      let msg = data.detail || 'Something went wrong';
+      if (Array.isArray(msg)) msg = msg[0]?.msg?.replace(/^Value error, /, '') || 'Invalid input';
+      throw new Error(msg);
+    }
+    show('Success — redirecting…', 'ok');
+    window.location.href = data.redirect || '/dashboard';
+  } catch (err) {
+    show(err.message);
+    btn.disabled = false;
+    btn.innerHTML = original;
+  }
+}
+
+$('#signin').onsubmit = e => {
+  e.preventDefault();
+  clearAlert();
+  const email = $('#li-email').value.trim(), password = $('#li-pass').value;
+  if (!email || !password) return show('Email and password are required');
+  post('/api/login', { email, password }, e.target.querySelector('button[type=submit]'));
+};
+
+$('#signup').onsubmit = e => {
+  e.preventDefault();
+  clearAlert();
+  const body = {
+    name: $('#su-name').value.trim(),
+    email: $('#su-email').value.trim(),
+    phone: $('#su-phone').value.trim(),
+    password: $('#su-pass').value,
+    confirm_password: $('#su-pass2').value,
+  };
+  if (!body.name || !body.email || !body.phone) return show('Please fill in all fields');
+  if (body.password.length < 6) return show('Password must be at least 6 characters');
+  if (body.password !== body.confirm_password) return show('Passwords do not match');
+  post('/api/signup', body, e.target.querySelector('button[type=submit]'));
+};
+</script>
+</body>
+</html>

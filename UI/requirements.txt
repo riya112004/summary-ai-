@@ -1,0 +1,14 @@
+fastapi
+uvicorn[standard]
+motor
+passlib[bcrypt]
+bcrypt==4.0.1
+python-jose[cryptography]
+python-multipart
+jinja2
+email-validator
+python-dotenv
+pymupdf
+python-docx
+paddleocr
+opencv-python-headless

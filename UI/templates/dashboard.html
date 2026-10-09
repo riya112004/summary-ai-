@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dashboard — AI Analysis</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <div class="brand-mark">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 2v4M12 18v4M4.9 4.9l2.8 2.8M16.3 16.3l2.8 2.8M2 12h4M18 12h4M4.9 19.1l2.8-2.8M16.3 7.7l2.8-2.8"/>
+        <circle cx="12" cy="12" r="3.2"/>
+      </svg>
+    </div>
+    <div>
+      <div class="brand-name">AI Analysis</div>
+      <div class="brand-sub">Document Intelligence</div>
+    </div>
+  </div>
+
+  <nav class="nav">
+    <button class="active" data-view="v-dash">Dashboard</button>
+    <button data-view="v-upload">Upload</button>
+    <button data-view="v-docs">Documents</button>
+  </nav>
+
+  <div class="menu-wrap">
+    <button class="avatar-btn" id="menuBtn">
+      <span class="avatar" id="avatar">{{ user.name[:1]|upper }}</span>
+      <span class="nm" id="navName">{{ user.name }}</span>
+      <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;opacity:.6"><path d="M6 9l6 6 6-6"/></svg>
+    </button>
+    <div class="menu" id="menu">
+      <div class="menu-head">
+        <div class="mn" id="menuName">{{ user.name }}</div>
+        <div class="me">{{ user.email }}</div>
+      </div>
+      <button data-view="v-profile">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1"/></svg>
+        My Profile
+      </button>
+      <button data-view="v-upload">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5-5 5 5M12 5v12"/></svg>
+        Upload Document
+      </button>
+      <button class="danger" id="logoutBtn">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5M21 12H9"/></svg>
+        Log out
+      </button>
+    </div>
+  </div>
+</header>
+
+<main>
+  <!-- ============ DASHBOARD ============ -->
+  <section class="view active" id="v-dash">
+    <div class="page-head">
+      <h2>Hey <span id="greetName">{{ user.name.split(' ')[0] }}</span> 👋</h2>
+      <p>Here is what is happening in your workspace.</p>
+    </div>
+
+    <div class="stats">
+      <div class="stat glass">
+        <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M9 13h6M9 17h6"/></svg></div>
+        <div class="lbl">Total Documents</div>
+        <div class="val" id="s-total">—</div>
+      </div>
+      <div class="stat glass">
+        <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 1.7 4 3 9 3s9-1.3 9-3V5M3 12c0 1.7 4 3 9 3s9-1.3 9-3"/></svg></div>
+        <div class="lbl">Storage Used</div>
+        <div class="val" id="s-size">—</div>
+      </div>
+      <div class="stat glass">
+        <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg></div>
+        <div class="lbl">Last 7 Days</div>
+        <div class="val" id="s-recent">—</div>
+      </div>
+      <div class="stat glass">
+        <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></div>
+        <div class="lbl">File Types</div>
+        <div class="val" id="s-types">—</div>
+      </div>
+    </div>
+
+    <div class="grid-2">
+      <div class="panel glass">
+        <div class="panel-head">
+          <div><h3>Upload activity</h3><div class="sub">Documents added per day, last 7 days</div></div>
+        </div>
+        <div class="bars" id="bars"></div>
+      </div>
+
+      <div class="panel glass">
+        <div class="panel-head">
+          <div><h3>By file type</h3><div class="sub">Distribution of your documents</div></div>
+        </div>
+        <div id="typeList"><div class="empty" style="padding:24px"><span class="sub">No data yet</span></div></div>
+      </div>
+    </div>
+
+    <div class="panel glass" style="margin-top:15px">
+      <div class="panel-head">
+        <div><h3>Recent documents</h3><div class="sub">Your 5 latest uploads</div></div>
+        <button class="btn btn-ghost btn-sm" data-view="v-docs">View all</button>
+      </div>
+      <div class="tbl-wrap" id="recentWrap"></div>
+    </div>
+  </section>
+
+  <!-- ============ UPLOAD ============ -->
+  <section class="view" id="v-upload">
+    <div class="page-head">
+      <h2>Upload</h2>
+      <p>Anything you upload is saved against your account id — only you can see or download it.</p>
+    </div>
+
+    <div class="panel glass form-narrow">
+      <form id="upForm">
+        <div class="field">
+          <label for="up-title">Document name <span style="font-weight:400">(optional)</span></label>
+          <input class="ctrl" id="up-title" type="text" placeholder="e.g. Q3 Revenue Report">
+        </div>
+
+        <div class="drop" id="drop">
+          <div class="di">
+            <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5-5 5 5M12 5v12"/></svg>
+          </div>
+          <b>Click to browse or drop a file here</b>
+          <span>Any file type · up to 25 MB</span>
+          <input type="file" id="file" hidden>
+        </div>
+
+        <div class="picked" id="picked">
+          <span class="ftype" id="pickedType">FILE</span>
+          <span class="pn"><span id="pickedName"></span><br><span class="ps" id="pickedSize"></span></span>
+          <button class="btn btn-ghost btn-sm" type="button" id="clearPick">Remove</button>
+        </div>
+
+        <div id="upAlert" class="alert" style="margin-top:14px"></div>
+        <button class="btn btn-primary" type="submit" style="margin-top:6px">Upload to my workspace</button>
+      </form>
+    </div>
+  </section>
+
+  <!-- ============ DOCUMENTS ============ -->
+  <section class="view" id="v-docs">
+    <div class="page-head">
+      <h2>My Documents</h2>
+      <p>Everything you have uploaded, newest first.</p>
+    </div>
+
+    <div class="panel glass">
+      <div class="panel-head">
+        <div><h3>All documents</h3><div class="sub" id="docCount">—</div></div>
+        <div style="display:flex;gap:9px;flex-wrap:wrap">
+          <div class="search-box">
+            <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+            <input class="ctrl" id="search" type="search" placeholder="Search documents…">
+          </div>
+          <button class="btn btn-primary btn-sm" style="width:auto" data-view="v-upload">+ Upload</button>
+        </div>
+      </div>
+      <div class="tbl-wrap" id="docsWrap"></div>
+    </div>
+  </section>
+
+  <!-- ============ PROFILE ============ -->
+  <section class="view" id="v-profile">
+    <div class="page-head">
+      <h2>My Profile</h2>
+      <p>Update your details. Your email address is permanent and cannot be changed.</p>
+    </div>
+
+    <div class="panel glass form-narrow">
+      <h3 style="font-size:15px;margin-bottom:14px">Account details</h3>
+      <div id="profAlert" class="alert"></div>
+
+      <form id="profForm">
+        <div class="field">
+          <label for="pf-name">Full name</label>
+          <input class="ctrl" id="pf-name" type="text" value="{{ user.name }}" required>
+        </div>
+        <div class="field">
+          <label for="pf-email">Email address</label>
+          <div class="locked">
+            <input class="ctrl" id="pf-email" type="email" value="{{ user.email }}" disabled>
+            <span class="tag">Locked</span>
+          </div>
+        </div>
+        <div class="field">
+          <label for="pf-phone">Phone number</label>
+          <input class="ctrl" id="pf-phone" type="tel" value="{{ user.phone }}" required>
+        </div>
+
+        <div class="divider"></div>
+        <h3 style="font-size:15px;margin-bottom:6px">Change password</h3>
+        <p class="sub" style="color:var(--muted);font-size:12.5px;margin:0 0 14px">Leave these blank to keep your current password.</p>
+
+        <div class="field">
+          <label for="pf-cur">Current password</label>
+          <input class="ctrl" id="pf-cur" type="password" autocomplete="current-password" placeholder="••••••••">
+        </div>
+        <div class="row2">
+          <div class="field">
+            <label for="pf-new">New password</label>
+            <input class="ctrl" id="pf-new" type="password" autocomplete="new-password" placeholder="Min 6 characters">
+          </div>
+          <div class="field">
+            <label for="pf-new2">Confirm new password</label>
+            <input class="ctrl" id="pf-new2" type="password" autocomplete="new-password" placeholder="Repeat password">
+          </div>
+        </div>
+
+        <button class="btn btn-primary" type="submit" style="margin-top:6px">Save changes</button>
+      </form>
+    </div>
+  </section>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+
+/* ---------- helpers ---------- */
+function fmtBytes(b) {
+  if (!b) return '0 B';
+  const u = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.min(Math.floor(Math.log(b) / Math.log(1024)), 3);
+  return (b / Math.pow(1024, i)).toFixed(i ? 1 : 0) + ' ' + u[i];
+}
+function fmtDate(iso) {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleString(undefined, { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+function extOf(d) {
+  const m = (d.filename || '').match(/\.([a-z0-9]{1,5})$/i);
+  return m ? m[1].toUpperCase().slice(0, 4) : 'FILE';
+}
+function esc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+let toastTimer;
+function toast(msg, kind = 'ok') {
+  const t = $('#toast');
+  t.textContent = msg;
+  t.className = 'toast show ' + kind;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.className = 'toast ' + kind, 3200);
+}
+function banner(el, msg, kind) {
+  el.textContent = msg;
+  el.className = 'alert show ' + kind;
+}
+
+async function api(url, opts = {}) {
+  const res = await fetch(url, opts);
+  if (res.status === 401) { window.location.href = '/login'; throw new Error('Session expired'); }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    let msg = data.detail || 'Request failed';
+    if (Array.isArray(msg)) msg = msg[0]?.msg?.replace(/^Value error, /, '') || 'Invalid input';
+    throw new Error(msg);
+  }
+  return data;
+}
+
+/* ---------- navigation ---------- */
+function go(view) {
+  $$('.view').forEach(v => v.classList.toggle('active', v.id === view));
+  $$('.nav button').forEach(b => b.classList.toggle('active', b.dataset.view === view));
+  $('#menu').classList.remove('open');
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+  if (view === 'v-docs') loadDocs();
+  if (view === 'v-dash') loadDash();
+}
+$$('[data-view]').forEach(b => b.addEventListener('click', () => go(b.dataset.view)));
+
+$('#menuBtn').onclick = e => { e.stopPropagation(); $('#menu').classList.toggle('open'); };
+document.addEventListener('click', e => {
+  if (!e.target.closest('.menu-wrap')) $('#menu').classList.remove('open');
+});
+$('#logoutBtn').onclick = async () => {
+  await fetch('/api/logout', { method: 'POST' });
+  window.location.href = '/login';
+};
+
+/* ---------- dashboard ---------- */
+function renderBars(daily) {
+  const days = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    const key = d.toISOString().slice(0, 10);
+    days.push({ key, label: d.toLocaleDateString(undefined, { weekday: 'short' }).slice(0, 2), v: daily[key] || 0 });
+  }
+  const max = Math.max(1, ...days.map(d => d.v));
+  $('#bars').innerHTML = days.map(d => `
+    <div class="bar-col">
+      <div class="bar" data-v="${d.v}" style="height:${Math.max(4, (d.v / max) * 100)}%"></div>
+      <div class="d">${d.label}</div>
+    </div>`).join('');
+}
+
+function renderTypes(list) {
+  if (!list.length) {
+    $('#typeList').innerHTML = '<div class="empty" style="padding:24px"><span>No documents yet</span></div>';
+    return;
+  }
+  const max = Math.max(...list.map(t => t.count));
+  $('#typeList').innerHTML = list.map(t => `
+    <div class="type-row">
+      <span class="t">${esc(t.type)}</span>
+      <span class="meter"><i style="width:${(t.count / max) * 100}%"></i></span>
+      <span class="c">${t.count}</span>
+    </div>`).join('');
+}
+
+function docRows(docs, compact) {
+  if (!docs.length) {
+    return `<div class="empty">
+      <div class="ei"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg></div>
+      <b>No documents yet</b>
+      <span>Upload your first file to get started.</span>
+      <div style="margin-top:16px"><button class="btn btn-primary btn-sm" style="width:auto" data-view="v-upload">Upload a document</button></div>
+    </div>`;
+  }
+  return `<table>
+    <thead><tr><th>Document</th>${compact ? '' : '<th>Type</th>'}<th>Size</th><th>Uploaded</th><th></th></tr></thead>
+    <tbody>${docs.map(d => `
+      <tr>
+        <td><div class="doc-cell">
+          <span class="ftype">${extOf(d)}</span>
+          <span class="dt"><span class="dn">${esc(d.title)}</span><span class="df">${esc(d.filename)} · Text: ${esc(d.extraction_status || 'pending')}</span></span>
+        </div></td>
+        ${compact ? '' : `<td><span class="pill">${esc(d.content_type)}</span></td>`}
+        <td>${fmtBytes(d.size)}</td>
+        <td><span style="color:var(--muted)">${fmtDate(d.uploaded_at)}</span></td>
+        <td><div class="acts">
+          <a class="btn btn-ghost btn-sm" href="/api/documents/${d.id}/download">Download</a>
+          <button class="btn btn-danger btn-sm" data-del="${d.id}" data-name="${esc(d.title)}">Delete</button>
+        </div></td>
+      </tr>`).join('')}
+    </tbody></table>`;
+}
+
+function wire(root) {
+  $$('[data-del]', root).forEach(b => b.onclick = async () => {
+    if (!confirm('Delete "' + b.dataset.name + '"? This cannot be undone.')) return;
+    b.disabled = true;
+    try {
+      await api('/api/documents/' + b.dataset.del, { method: 'DELETE' });
+      toast('Document deleted');
+      loadDocs(); loadDash();
+    } catch (err) { toast(err.message, 'err'); b.disabled = false; }
+  });
+  $$('[data-view]', root).forEach(b => b.onclick = () => go(b.dataset.view));
+}
+
+async function loadDash() {
+  try {
+    const [s, d] = await Promise.all([api('/api/stats'), api('/api/documents?limit=5')]);
+    $('#s-total').textContent = s.total_documents;
+    $('#s-size').textContent = fmtBytes(s.total_bytes);
+    $('#s-recent').textContent = s.recent_7_days;
+    $('#s-types').textContent = s.distinct_types;
+    renderBars(s.daily || {});
+    renderTypes(s.by_type || []);
+    $('#recentWrap').innerHTML = docRows(d.documents, true);
+    wire($('#recentWrap'));
+  } catch (err) { toast(err.message, 'err'); }
+}
+
+let extractionPollTimer;
+async function loadDocs() {
+  clearTimeout(extractionPollTimer);
+  const q = $('#search').value.trim();
+  $('#docsWrap').innerHTML = '<div class="empty"><span class="spin" style="margin:0 auto"></span></div>';
+  try {
+    const d = await api('/api/documents?limit=200&q=' + encodeURIComponent(q));
+    $('#docCount').textContent = d.documents.length + (d.documents.length === 1 ? ' document' : ' documents');
+    $('#docsWrap').innerHTML = docRows(d.documents, false);
+    wire($('#docsWrap'));
+    if (d.documents.some(doc => doc.extraction_status === 'pending')) {
+      extractionPollTimer = setTimeout(loadDocs, 3000);
+    }
+  } catch (err) { toast(err.message, 'err'); }
+}
+
+let searchTimer;
+$('#search').oninput = () => { clearTimeout(searchTimer); searchTimer = setTimeout(loadDocs, 280); };
+
+/* ---------- upload ---------- */
+const drop = $('#drop'), fileInput = $('#file');
+drop.onclick = () => fileInput.click();
+['dragenter', 'dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('over'); }));
+['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('over'); }));
+drop.addEventListener('drop', e => {
+  if (e.dataTransfer.files.length) { fileInput.files = e.dataTransfer.files; showPick(); }
+});
+fileInput.onchange = showPick;
+
+function showPick() {
+  const f = fileInput.files[0];
+  if (!f) return $('#picked').classList.remove('show');
+  $('#pickedName').textContent = f.name;
+  $('#pickedSize').textContent = fmtBytes(f.size) + ' · ' + (f.type || 'unknown type');
+  $('#pickedType').textContent = (f.name.match(/\.([a-z0-9]{1,5})$/i) || [, 'FILE'])[1].toUpperCase().slice(0, 4);
+  $('#picked').classList.add('show');
+  $('#upAlert').className = 'alert';
+}
+$('#clearPick').onclick = () => { fileInput.value = ''; $('#picked').classList.remove('show'); };
+
+async function watchExtraction(docId, title, alertEl) {
+  const deadline = Date.now() + 95000;
+  while (Date.now() < deadline) {
+    await new Promise(resolve => setTimeout(resolve, 3000));
+    try {
+      const doc = await api('/api/documents/' + docId);
+      if (doc.extraction_status === 'completed') {
+        banner(alertEl, '"' + title + '" uploaded; text extraction completed.', 'ok');
+        loadDocs();
+        return;
+      }
+      if (doc.extraction_status === 'failed' || doc.extraction_status === 'no_text') {
+        const detail = doc.extraction_error ? ' ' + doc.extraction_error : '';
+        banner(alertEl, '"' + title + '" uploaded, but extraction ' + doc.extraction_status + '.' + detail, 'err');
+        loadDocs();
+        return;
+      }
+    } catch (err) {
+      banner(alertEl, '"' + title + '" uploaded. Could not check extraction status: ' + err.message, 'err');
+      return;
+    }
+  }
+  banner(alertEl, '"' + title + '" uploaded, but extraction is still pending after 90 seconds. Check the server log.', 'err');
+}
+
+$('#upForm').onsubmit = async e => {
+  e.preventDefault();
+  const al = $('#upAlert');
+  const f = fileInput.files[0];
+  if (!f) return banner(al, 'Please choose a file first', 'err');
+  if (f.size > 25 * 1024 * 1024) return banner(al, 'File is larger than 25 MB', 'err');
+
+  const btn = e.target.querySelector('button[type=submit]');
+  const orig = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spin"></span> Uploading…';
+
+  const fd = new FormData();
+  fd.append('file', f);
+  fd.append('title', $('#up-title').value.trim());
+  try {
+    const r = await api('/api/upload', { method: 'POST', body: fd });
+    banner(al, '"' + r.title + '" uploaded. Checking text extraction status…', 'ok');
+    toast('Upload complete');
+    fileInput.value = '';
+    $('#up-title').value = '';
+    $('#picked').classList.remove('show');
+    loadDash();
+    loadDocs();
+    if (r.extraction_status === 'pending') watchExtraction(r.id, r.title, al);
+  } catch (err) {
+    const message = err instanceof TypeError && err.message === 'Failed to fetch'
+      ? 'Connection to the server was interrupted. Check Documents before retrying; the file may already have uploaded.'
+      : err.message;
+    banner(al, message, 'err');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = orig;
+  }
+};
+
+/* ---------- profile ---------- */
+$('#profForm').onsubmit = async e => {
+  e.preventDefault();
+  const al = $('#profAlert');
+  const body = {
+    name: $('#pf-name').value.trim(),
+    phone: $('#pf-phone').value.trim(),
+  };
+  const newPass = $('#pf-new').value;
+  if (!body.name || !body.phone) return banner(al, 'Name and phone cannot be empty', 'err');
+  if (newPass) {
+    if (newPass.length < 6) return banner(al, 'New password must be at least 6 characters', 'err');
+    if (newPass !== $('#pf-new2').value) return banner(al, 'New passwords do not match', 'err');
+    if (!$('#pf-cur').value) return banner(al, 'Enter your current password to change it', 'err');
+    body.current_password = $('#pf-cur').value;
+    body.new_password = newPass;
+    body.confirm_password = $('#pf-new2').value;
+  }
+
+  const btn = e.target.querySelector('button[type=submit]');
+  const orig = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spin"></span> Saving…';
+  try {
+    const r = await api('/api/me', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    banner(al, 'Profile updated successfully.', 'ok');
+    toast('Profile saved');
+    $('#navName').textContent = r.user.name;
+    $('#menuName').textContent = r.user.name;
+    $('#avatar').textContent = (r.user.name[0] || '?').toUpperCase();
+    $('#greetName').textContent = r.user.name.split(' ')[0];
+    ['#pf-cur', '#pf-new', '#pf-new2'].forEach(s => $(s).value = '');
+  } catch (err) {
+    banner(al, err.message, 'err');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = orig;
+  }
+};
+
+loadDash();
+</script>
+</body>
+</html>
