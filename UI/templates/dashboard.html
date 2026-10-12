@@ -494,15 +494,20 @@ function summaryMessage(doc) {
 }
 
 function formatAssistantSummary(text) {
+  const formatInline = value => String(value).split(/(\*\*[^*]+\*\*)/g).map(part =>
+    part.startsWith('**') && part.endsWith('**')
+      ? `<strong>${esc(part.slice(2, -2))}</strong>`
+      : esc(part)
+  ).join('');
   return String(text || '').split(/\r?\n/).map(line => {
     const value = line.trim();
     if (!value) return '';
     if (value.startsWith('## ')) return `<h5>${esc(value.slice(3))}</h5>`;
     if (value.startsWith('### ')) return `<h6>${esc(value.slice(4))}</h6>`;
     if (value.startsWith('- ')) {
-      return `<div class="assistant-summary-item"><span aria-hidden="true">•</span><span>${esc(value.slice(2))}</span></div>`;
+      return `<div class="assistant-summary-item"><span aria-hidden="true">•</span><span>${formatInline(value.slice(2))}</span></div>`;
     }
-    return `<p>${esc(value)}</p>`;
+    return `<p>${formatInline(value)}</p>`;
   }).join('');
 }
 

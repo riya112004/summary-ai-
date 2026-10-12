@@ -65,6 +65,7 @@ _NUMBER_LABEL = re.compile(
 )
 _PAN_LABEL = re.compile(r"\bpan\s*(?:(?:no\.?|number|#)\s*)?[:=#-]\s*", re.IGNORECASE)
 _FATHER_NAME_LABEL = re.compile(r"\bfather(?:'s|’s)?\s+name\b", re.IGNORECASE)
+_PARENT_NAME_LABEL = re.compile(r"\b(?:s|d)\s*/\s*o\b\.?", re.IGNORECASE)
 _PAN_VALUE = re.compile(r"\b[A-Z]{5}\d{4}[A-Z]\b")
 _OCR_PAN_VALUE = re.compile(
     r"\b(?=[A-Z0-9]{10}\b)(?=(?:[A-Z0-9]*\d){3})"
@@ -140,22 +141,28 @@ def _labeled_value(text: str, label_pattern: re.Pattern[str]) -> Optional[str]:
 def _father_name(text: str) -> Optional[str]:
     for line in text.splitlines():
         match = _FATHER_NAME_LABEL.search(line)
-        if not match:
-            continue
-        suffix = line[match.end():].strip(" \t:#-/|")
-        if suffix:
-            value = _NEXT_FIELD_LABEL.split(suffix, maxsplit=1)[0].strip(" \t|,:;")
+        if match:
+            suffix = line[match.end():].strip(" \t:#-/|")
+            if suffix:
+                value = _NEXT_FIELD_LABEL.split(suffix, maxsplit=1)[0].strip(" \t|,:;")
+                if value:
+                    return value
+            prefix = line[:match.start()]
+            # OCR sometimes places the value before the field label; accept only a
+            # contiguous sequence of uppercase name-like words, not nearby OCR noise.
+            names = re.findall(
+                r"(?<![A-Za-z])([A-Z][A-Z'-]*(?:\s+[A-Z][A-Z'-]*){1,3})(?=\s|$)",
+                prefix,
+            )
+            if names:
+                return names[-1].strip()
+
+        parent_match = _PARENT_NAME_LABEL.search(line)
+        if parent_match:
+            value = line[parent_match.end():].strip(" \t:#-/|")
+            value = _NEXT_FIELD_LABEL.split(value, maxsplit=1)[0].strip(" \t|,:;")
             if value:
                 return value
-        prefix = line[:match.start()]
-        # OCR sometimes places the value before the field label; accept only a
-        # contiguous sequence of uppercase name-like words, not nearby OCR noise.
-        names = re.findall(
-            r"(?<![A-Za-z])([A-Z][A-Z'-]*(?:\s+[A-Z][A-Z'-]*){1,3})(?=\s|$)",
-            prefix,
-        )
-        if names:
-            return names[-1].strip()
     return None
 
 
@@ -427,7 +434,7 @@ def build_document_summary(text: str) -> str:
         value = details.get(key)
         if value and value != "Not available":
             verification_note = (
-                " (OCR value; verify against the original)"
+                " (verify against the original)"
                 if key in {"pan_number", "aadhaar_number", "abha_number",
                            "document_number", "policy_number"}
                 else ""
@@ -438,83 +445,100 @@ def build_document_summary(text: str) -> str:
     fields.extend(f"- Extracted result detail: {line}" for line in marks)
     if details.get("signature_notice"):
         fields.append(
-            "- Signature notice: The OCR text mentions physical signing; "
-            "check the original card because the extracted wording is unclear."
+            "- Signature notice: The printed signature wording is unclear; "
+            "check the original card."
         )
 
-    summary_sentences = [
-        f"The saved OCR text identifies this as a {document_type}."
-    ]
+    summary_sentences = []
     if details["holder_name"] != "Not available":
-        summary_sentences.append(
-            f"The saved OCR text identifies the holder as {details['holder_name']}."
+        subject = (
+            f"The {document_type}"
+            if details["document_type"] != "Not available"
+            else "This document"
         )
-    if details["father_name"] != "Not available":
+        holder_sentence = f"{subject} belongs to **{details['holder_name']}**"
+        if details["father_name"] != "Not available":
+            holder_sentence += (
+                f", whose father's name is **{details['father_name']}**"
+            )
+        summary_sentences.append(holder_sentence + ".")
+    elif details["document_type"] != "Not available":
+        summary_sentences.append(f"This is a {document_type}.")
+
+    if (
+        details["father_name"] != "Not available"
+        and details["holder_name"] == "Not available"
+    ):
         summary_sentences.append(
-            f"It lists the father's name as {details['father_name']}."
+            f"The father's name is **{details['father_name']}**."
         )
+
     if details["pan_number"] != "Not available":
         summary_sentences.append(
-            f"The OCR text contains PAN number {details['pan_number']}; "
-            "verify its characters against the original document."
+            f"The PAN number is **{details['pan_number']}**; "
+            "please verify it against the original card."
         )
     elif details["aadhaar_number"] != "Not available":
         summary_sentences.append(
-            f"The OCR text contains Aadhaar number {details['aadhaar_number']}; "
-            "verify it against the original document."
+            f"The Aadhaar number is **{details['aadhaar_number']}**; "
+            "please verify it against the original card."
         )
     elif details["abha_number"] != "Not available":
         summary_sentences.append(
-            f"The OCR text contains ABHA number {details['abha_number']}; "
-            "verify it against the original document."
+            f"The ABHA number is **{details['abha_number']}**; "
+            "please verify it against the original card."
         )
     elif (
         details["document_number"] != "Not available"
         and details["document_number"] != details["policy_number"]
     ):
         summary_sentences.append(
-            f"It lists document number {details['document_number']}; "
-            "verify it against the original document."
+            f"The document number is **{details['document_number']}**; "
+            "please verify it against the original document."
         )
     if details["policy_number"] != "Not available":
         summary_sentences.append(
-            f"It lists policy number {details['policy_number']}."
+            f"The policy number is **{details['policy_number']}**."
         )
     if details["date_of_birth"] != "Not available":
         summary_sentences.append(
-            f"It records the date of birth as {details['date_of_birth']}."
+            f"The date of birth is **{details['date_of_birth']}**."
         )
     if details["issue_date"] != "Not available":
         summary_sentences.append(
-            f"It records the issue date as {details['issue_date']}."
+            f"The issue date is **{details['issue_date']}**."
         )
     if details["expiry_date"] != "Not available":
         summary_sentences.append(
-            f"The printed validity date is {details['expiry_date']}."
+            f"The expiry/validity date is **{details['expiry_date']}**."
         )
     if details["coverage"] != "Not available":
-        summary_sentences.append(f"It lists coverage as {details['coverage']}.")
+        summary_sentences.append(f"The coverage is **{details['coverage']}**.")
     if details["premium"] != "Not available":
-        summary_sentences.append(f"It lists premium as {details['premium']}.")
+        summary_sentences.append(f"The premium is **{details['premium']}**.")
     if details["mobile_or_phone"] != "Not available":
         summary_sentences.append(
-            f"The extracted text lists phone number {details['mobile_or_phone']}."
+            f"The phone number is **{details['mobile_or_phone']}**."
         )
     if details["email"] != "Not available":
         summary_sentences.append(
-            f"The extracted text lists email address {details['email']}."
+            f"The email address is **{details['email']}**."
         )
     if marks:
         summary_sentences.append(
-            "The extracted text also contains these marks/result lines: "
+            "The marks/result details are: "
             + "; ".join(marks)
             + "."
         )
-    if len(summary_sentences) == 1:
+    if details.get("signature_notice"):
+        summary_sentences.append(
+            "The signature wording is unclear, so check the original card."
+        )
+    if not summary_sentences:
         readable_lines = build_source_grounded_summary(text, max_lines=5)
         if readable_lines:
             summary_sentences.append(
-                "The saved OCR text contains these readable lines: "
+                "Readable details include: "
                 + "; ".join(
                     line.removeprefix("• ").rstrip(".")
                     for line in readable_lines.splitlines()
@@ -523,7 +547,7 @@ def build_document_summary(text: str) -> str:
             )
         else:
             summary_sentences.append(
-                "No readable details could be reliably extracted from the saved text."
+                "No clear document details could be extracted from the text."
             )
 
     body = "\n".join(fields) if fields else "No reliable labeled fields were found."
