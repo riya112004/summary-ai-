@@ -39,6 +39,7 @@ from document_intelligence import (
     extract_document_fields,
     validate_extractive_summary,
 )
+from plan_intelligence import build_plan_schedule_summary, serialize_plan_schedule
 
 try:
     import fitz
@@ -81,7 +82,7 @@ OLLAMA_URL = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434").rstrip("/")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen3:0.6b")
 OLLAMA_TIMEOUT_SECONDS = int(os.getenv("OLLAMA_TIMEOUT_SECONDS", "180"))
 SUMMARY_MAX_INPUT_CHARS = 30000
-SUMMARY_PROMPT_VERSION = "extractive-details-v7"
+SUMMARY_PROMPT_VERSION = "extractive-details-v8"
 SUMMARY_MAX_ATTEMPTS = 3
 SUMMARY_RETRY_DELAYS = (2, 5)
 SUMMARY_PROCESSING_LEASE_SECONDS = OLLAMA_TIMEOUT_SECONDS + 60
@@ -1754,6 +1755,106 @@ async def update_me(data: ProfileIn, user=Depends(current_user)):
 
 
 # ---------------- stats ----------------
+@app.get("/api/dashboard-overview")
+async def dashboard_overview(user=Depends(current_user)):
+    user_filter = {"user_id": user["_id"]}
+    total_documents = await db.documents.count_documents(user_filter)
+    extracted_documents = await db.documents.count_documents({
+        **user_filter,
+        "extraction_status": "completed",
+    })
+    processing_documents = await db.documents.count_documents({
+        **user_filter,
+        "$or": [
+            {"extraction_status": {"$in": ["pending", "processing"]}},
+            {"summary_status": {"$in": ["pending", "processing", "generating"]}},
+        ],
+    })
+    recent_cursor = (
+        db.documents.find(
+            user_filter,
+            {
+                "_id": 1,
+                "title": 1,
+                "filename": 1,
+                "content_type": 1,
+                "uploaded_at": 1,
+                "extraction_status": 1,
+                "summary_status": 1,
+            },
+        )
+        .sort("uploaded_at", -1)
+        .limit(5)
+    )
+    recent_documents = []
+    async for doc in recent_cursor:
+        uploaded_at = doc.get("uploaded_at")
+        recent_documents.append({
+            "id": str(doc["_id"]),
+            "title": doc.get("title") or doc.get("filename") or "Untitled document",
+            "filename": doc.get("filename") or "",
+            "content_type": doc.get("content_type") or "",
+            "uploaded_at": uploaded_at.isoformat() if uploaded_at else None,
+            "extraction_status": doc.get("extraction_status", "pending"),
+            "summary_status": doc.get("summary_status", "unavailable"),
+        })
+    return {
+        "total_documents": total_documents,
+        "extracted_documents": extracted_documents,
+        "processing_documents": processing_documents,
+        "recent_documents": recent_documents,
+    }
+
+
+@app.get("/api/dashboard-plan")
+async def dashboard_plan(user=Depends(current_user)):
+    cursor = (
+        db.documents.find(
+            {
+                "user_id": user["_id"],
+                "extracted_text": {
+                    "$regex": r"^\s*Period\s*:",
+                    "$options": "im",
+                },
+            },
+            {
+                "_id": 1,
+                "title": 1,
+                "filename": 1,
+                "uploaded_at": 1,
+                "extracted_text": 1,
+            },
+        )
+        .sort("uploaded_at", -1)
+    )
+    parsed_plans = []
+    async for doc in cursor:
+        schedule = build_plan_schedule_summary(doc.get("extracted_text") or "")
+        if schedule:
+            uploaded_at = doc.get("uploaded_at")
+            parsed_plans.append({
+                "document_id": str(doc["_id"]),
+                "title": doc.get("title") or doc.get("filename") or "Work plan",
+                "uploaded_at": uploaded_at.isoformat() if uploaded_at else None,
+                "schedule": schedule,
+            })
+    selected_plan = next(
+        (
+            plan for plan in parsed_plans
+            if plan["schedule"]["in_plan_period"]
+        ),
+        parsed_plans[0] if parsed_plans else None,
+    )
+    if not selected_plan:
+        return {"plan": None}
+    return {
+        "plan": {
+            **selected_plan,
+            "schedule": serialize_plan_schedule(selected_plan["schedule"]),
+        }
+    }
+
+
 @app.get("/api/activity")
 async def list_activity(
     user=Depends(current_user),

@@ -26,7 +26,8 @@
   </div>
 
   <nav class="nav">
-    <button class="active" data-view="v-activity">Activity</button>
+    <button class="active" data-view="v-home">Dashboard</button>
+    <button data-view="v-activity">Activity</button>
     <button data-view="v-dash">AI Assistant</button>
     <button data-view="v-upload">Upload</button>
     <button data-view="v-docs">Documents</button>
@@ -60,10 +61,63 @@
 </header>
 
 <main>
-  <!-- ============ ACTIVITY ============ -->
-  <section class="view active" id="v-activity">
+  <!-- ============ PERSONAL OVERVIEW ============ -->
+  <section class="view active" id="v-home">
+    <div class="page-head overview-head">
+      <div>
+        <h2>Welcome, {{ user.name }}</h2>
+        <p>Your personal overview of uploaded plans and documents.</p>
+      </div>
+      <button class="btn btn-ghost btn-sm" id="refreshOverviewBtn" type="button">Refresh</button>
+    </div>
+
+    <div class="stats overview-stats" aria-live="polite">
+      <article class="stat glass">
+        <div class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h8"/></svg></div>
+        <div class="lbl">Plans &amp; documents</div>
+        <div class="val" id="overviewTotal">—</div>
+      </article>
+      <article class="stat glass">
+        <div class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/><path d="M22 12a10 10 0 1 1-5.8-9.1"/></svg></div>
+        <div class="lbl">Text extracted</div>
+        <div class="val" id="overviewExtracted">—</div>
+      </article>
+      <article class="stat glass">
+        <div class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg></div>
+        <div class="lbl">Processing</div>
+        <div class="val" id="overviewProcessing">—</div>
+      </article>
+    </div>
+
+    <div class="panel glass plan-panel">
+      <div class="panel-head assistant-heading">
+        <div><h3 id="planHeading">Your date-based plan</h3><div class="sub" id="planCaption">Looking for an uploaded schedule…</div></div>
+        <button class="btn btn-ghost btn-sm" id="refreshPlanBtn" type="button">Refresh plan</button>
+      </div>
+      <div id="planSummary" class="plan-summary" aria-live="polite">
+        <div class="empty"><span class="spin" style="margin:0 auto"></span></div>
+      </div>
+    </div>
+
+    <div class="panel glass overview-panel">
+      <div class="panel-head assistant-heading">
+        <div><h3>Your plans &amp; documents</h3><div class="sub" id="overviewCaption">Loading your latest uploads…</div></div>
+        <button class="btn btn-primary btn-sm" style="width:auto" data-view="v-upload" type="button">+ Upload</button>
+      </div>
+      <div id="recentDocuments" class="overview-documents" aria-live="polite">
+        <div class="empty"><span class="spin" style="margin:0 auto"></span></div>
+      </div>
+      <div class="overview-actions">
+        <button class="btn btn-ghost btn-sm" type="button" data-view="v-docs">View all documents</button>
+        <button class="btn btn-ghost btn-sm" type="button" data-view="v-activity">View activity history</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ ACTIVITY HISTORY ============ -->
+  <section class="view" id="v-activity">
     <div class="page-head">
-      <h2>My Activity</h2>
+      <h2>Activity history</h2>
       <p>A private timeline of actions in your account.</p>
     </div>
 
@@ -282,7 +336,9 @@ function go(view) {
   $$('.view').forEach(v => v.classList.toggle('active', v.id === view));
   $$('.nav button').forEach(b => b.classList.toggle('active', b.dataset.view === view));
   $('#menu').classList.remove('open');
+  if (view !== 'v-home') clearTimeout(overviewTimer);
   window.scrollTo({ top: 0, behavior: 'smooth' });
+  if (view === 'v-home') loadDashboardOverview();
   if (view === 'v-docs') loadDocs();
   if (view === 'v-activity') loadActivity();
   if (view === 'v-dash') {
@@ -318,6 +374,202 @@ async function fetchAllDocuments() {
     } while (documents.length < totalDocuments);
     return { documents, totalDocuments };
 }
+
+let overviewTimer;
+let overviewLoadInProgress = false;
+let overviewHasProcessing = false;
+
+function overviewStatus(status, kind) {
+  const labels = kind === 'extraction'
+    ? {
+        completed: 'Text extracted',
+        pending: 'Extracting',
+        processing: 'Extracting',
+        no_text: 'No text found',
+        unsupported: 'Unsupported file',
+        failed: 'Extraction failed',
+      }
+    : {
+        completed: 'Summary ready',
+        pending: 'Summary pending',
+        processing: 'Creating summary',
+        generating: 'Creating summary',
+        needs_review: 'Needs review',
+        failed: 'Summary failed',
+        unavailable: 'No summary',
+      };
+  return labels[status] || 'Status unavailable';
+}
+
+function overviewDocumentRow(doc) {
+  const retryTextExtraction = (
+    (doc.filename || '').toLowerCase().endsWith('.txt') ||
+    (doc.content_type || '').toLowerCase().startsWith('text/plain')
+  ) && doc.extraction_status !== 'completed';
+  return `<article class="overview-document">
+    <span class="ftype">${esc(extOf(doc))}</span>
+    <div class="overview-document-info">
+      <b>${esc(doc.title || doc.filename || 'Untitled document')}</b>
+      <span>${esc(doc.filename || '')} · Uploaded ${esc(fmtDate(doc.uploaded_at))}</span>
+    </div>
+    <div class="overview-document-status">
+      <span class="pill">${esc(overviewStatus(doc.extraction_status, 'extraction'))}</span>
+      <span class="pill">${esc(overviewStatus(doc.summary_status, 'summary'))}</span>
+    </div>
+    <div class="overview-document-actions">
+      ${retryTextExtraction
+        ? `<button class="btn btn-ghost btn-sm" type="button" data-extract="${esc(doc.id)}">Extract plan</button>`
+        : ''}
+      <button class="btn btn-ghost btn-sm" type="button" data-doc-details="${esc(doc.id)}">Details</button>
+    </div>
+  </article>`;
+}
+
+function formatPlanDate(iso) {
+  if (!iso) return 'Date not specified';
+  const value = new Date(`${iso}T00:00:00`);
+  return Number.isNaN(value.getTime())
+    ? 'Date not specified'
+    : value.toLocaleDateString(undefined, {
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric',
+      });
+}
+
+function planReviewLine(label, reviewDate) {
+  return reviewDate
+    ? `<p class="plan-review"><b>${esc(label)}:</b> ${esc(formatPlanDate(reviewDate))}</p>`
+    : '';
+}
+
+function renderPlanSummary(plan) {
+  const summary = $('#planSummary');
+  if (!plan) {
+    $('#planHeading').textContent = 'Your date-based plan';
+    $('#planCaption').textContent = 'No structured schedule detected in your uploaded documents.';
+    summary.innerHTML = `<div class="empty">
+      <b>No date-based plan found</b>
+      <span>Upload a plan with a date range and daily, monthly, or quarterly sections to see a schedule here.</span>
+    </div>`;
+    return;
+  }
+
+  const schedule = plan.schedule;
+  const today = schedule.today;
+  $('#planHeading').textContent = schedule.in_plan_period
+    ? `Plan for ${formatPlanDate(today.date)}`
+    : 'Your date-based plan';
+  $('#planCaption').textContent = `${plan.title} · Plan period ${formatPlanDate(schedule.plan_start)} – ${formatPlanDate(schedule.plan_end)}`;
+
+  if (!schedule.in_plan_period) {
+    summary.innerHTML = `<div class="plan-notice">
+      This plan does not cover today (${esc(formatPlanDate(today.date))}). Its period is ${esc(formatPlanDate(schedule.plan_start))} to ${esc(formatPlanDate(schedule.plan_end))}.
+    </div>`;
+    return;
+  }
+
+  const dailyContent = today.type === 'workday'
+    ? `<p>${esc(today.focus)}</p>
+       ${today.routine ? `<details class="plan-routine"><summary>View today's routine</summary><p>${esc(today.routine)}</p></details>` : ''}
+       <p class="plan-review"><b>Weekly deliverable due:</b> ${esc(formatPlanDate(today.due_date))} · <b>Task expiry:</b> ${esc(formatPlanDate(today.expiry_date))}</p>`
+    : `<p>${esc(today.focus)}</p>
+       <p class="plan-review"><b>Task expiry:</b> ${esc(formatPlanDate(today.expiry_date))}</p>`;
+  const weeklyDays = (schedule.week?.days || []).map(item =>
+    `<li><b>${esc(item.day)}:</b> ${esc(item.focus)}</li>`
+  ).join('');
+  const month = schedule.month || schedule.next_month;
+  const quarter = schedule.quarter || schedule.next_quarter;
+  const monthTitle = schedule.month ? `This plan month · Month ${month.number}` : `Next plan month · Month ${month?.number ?? ''}`;
+  const quarterTitle = schedule.quarter
+    ? `This quarter · Q${quarter.number} ${quarter.title}`
+    : quarter ? `Next quarter · Q${quarter.number} ${quarter.title}` : 'Quarterly milestone';
+
+  summary.innerHTML = `<div class="plan-grid">
+    <article class="plan-card plan-card-today">
+      <span class="plan-kicker">TODAY · ${esc(today.weekday)}</span>
+      <h4>Today's focus</h4>
+      ${dailyContent}
+    </article>
+    <article class="plan-card">
+      <span class="plan-kicker">THIS WEEK · ${esc(formatPlanDate(schedule.week.start))} – ${esc(formatPlanDate(schedule.week.end))}</span>
+      <h4>Weekly activities</h4>
+      <ul class="plan-weekdays">${weeklyDays}
+        <li><b>Saturday:</b> ${esc(schedule.week.saturday)}</li>
+        <li><b>Sunday:</b> ${esc(schedule.week.sunday)}</li>
+      </ul>
+      <p class="plan-review"><b>Deliverable due:</b> ${esc(formatPlanDate(schedule.week.deliverable_due))} · <b>Expires:</b> ${esc(formatPlanDate(schedule.week.task_expiry))}</p>
+    </article>
+    ${month ? `<article class="plan-card">
+      <span class="plan-kicker">${esc(monthTitle)} · ${esc(formatPlanDate(month.start))} – ${esc(formatPlanDate(month.end))}</span>
+      <h4>Monthly focus</h4>
+      <p>${esc(month.focus || 'No monthly objective was identified in this plan section.')}</p>
+      ${planReviewLine('Monthly review', month.review_date)}
+    </article>` : ''}
+    ${quarter ? `<article class="plan-card">
+      <span class="plan-kicker">${esc(quarterTitle)} · ${esc(formatPlanDate(quarter.start))} – ${esc(formatPlanDate(quarter.end))}</span>
+      <h4>Quarterly milestone</h4>
+      <p>${esc(quarter.focus || 'No quarterly objective was identified in this plan section.')}</p>
+      ${planReviewLine('Quarterly review', quarter.review_date)}
+    </article>` : ''}
+  </div>`;
+}
+
+async function loadDashboardPlan() {
+  try {
+    const result = await api('/api/dashboard-plan');
+    renderPlanSummary(result.plan);
+  } catch (err) {
+    $('#planHeading').textContent = 'Your date-based plan';
+    $('#planCaption').textContent = 'Could not load your schedule';
+    $('#planSummary').innerHTML = `<div class="empty"><span>${esc(err.message)}</span></div>`;
+  }
+}
+
+async function loadDashboardOverview() {
+  clearTimeout(overviewTimer);
+  if (overviewLoadInProgress) return;
+  overviewLoadInProgress = true;
+  const list = $('#recentDocuments');
+  list.innerHTML = '<div class="empty"><span class="spin" style="margin:0 auto"></span></div>';
+  const planLoad = loadDashboardPlan();
+  try {
+    const overview = await api('/api/dashboard-overview');
+    const documents = overview.recent_documents || [];
+    overviewHasProcessing = overview.processing_documents > 0;
+    $('#overviewTotal').textContent = overview.total_documents;
+    $('#overviewExtracted').textContent = overview.extracted_documents;
+    $('#overviewProcessing').textContent = overview.processing_documents;
+    $('#overviewCaption').textContent = overview.total_documents
+      ? `Showing ${documents.length} most recent of ${overview.total_documents} uploaded ${overview.total_documents === 1 ? 'file' : 'files'}`
+      : 'Your uploaded plans and documents will appear here.';
+    if (!documents.length) {
+      list.innerHTML = `<div class="empty">
+        <b>No plans or documents uploaded yet</b>
+        <span>Upload a plan or document to see it in your personal workspace.</span>
+      </div>`;
+    } else {
+      list.innerHTML = documents.map(overviewDocumentRow).join('');
+      wire(list);
+    }
+  } catch (err) {
+    overviewHasProcessing = false;
+    $('#overviewTotal').textContent = '—';
+    $('#overviewExtracted').textContent = '—';
+    $('#overviewProcessing').textContent = '—';
+    $('#overviewCaption').textContent = 'Could not load your overview';
+    list.innerHTML = `<div class="empty"><span>${esc(err.message)}</span></div>`;
+  } finally {
+    overviewLoadInProgress = false;
+    if (overviewHasProcessing && $('#v-home').classList.contains('active')) {
+      overviewTimer = setTimeout(loadDashboardOverview, 3000);
+    }
+    await planLoad;
+  }
+}
+
+$('#refreshOverviewBtn').onclick = loadDashboardOverview;
+$('#refreshPlanBtn').onclick = loadDashboardPlan;
 
 const ACTIVITY_PAGE_SIZE = 50;
 let activityOffset = 0;
@@ -514,6 +766,11 @@ function docRows(docs, compact) {
         <td><span style="color:var(--muted)">${fmtDate(d.uploaded_at)}</span></td>
         <td><div class="acts">
           <button class="btn btn-ghost btn-sm" data-doc-details="${esc(d.id)}" type="button">Summary</button>
+          ${(d.extraction_status !== 'completed' &&
+            ((d.filename || '').toLowerCase().endsWith('.txt') ||
+              (d.content_type || '').toLowerCase().startsWith('text/plain')))
+            ? `<button class="btn btn-ghost btn-sm" data-extract="${esc(d.id)}" type="button">Extract text</button>`
+            : ''}
           <a class="btn btn-ghost btn-sm" href="/api/documents/${d.id}/download">Download</a>
           <button class="btn btn-danger btn-sm" data-del="${d.id}" data-name="${esc(d.title)}">Delete</button>
         </div></td>
@@ -528,11 +785,32 @@ function wire(root) {
     try {
       await api('/api/documents/' + b.dataset.del, { method: 'DELETE' });
       toast('Document deleted');
-      loadDocs(); loadDash();
+      loadDocs(); loadDash(); loadDashboardOverview();
     } catch (err) { toast(err.message, 'err'); b.disabled = false; }
   });
   $$('[data-view]', root).forEach(b => b.onclick = () => go(b.dataset.view));
   $$('[data-doc-details]', root).forEach(b => b.onclick = () => showDocumentDetails(b.dataset.docDetails));
+  $$('[data-extract]', root).forEach(b => b.onclick = async () => {
+    b.disabled = true;
+    b.textContent = 'Extracting…';
+    try {
+      const result = await api('/api/documents/' + b.dataset.extract + '/extract-text', {
+        method: 'POST',
+      });
+      if (result.extraction_status === 'completed') {
+        toast('Text extracted; preparing your plan summary');
+      } else {
+        toast(result.extraction_error || `Extraction status: ${result.extraction_status}`, 'err');
+      }
+      loadDocs();
+      loadDash();
+      loadDashboardOverview();
+    } catch (err) {
+      toast(err.message, 'err');
+      b.disabled = false;
+      b.textContent = 'Extract text';
+    }
+  });
 }
 
 function expiryStatusLabel(status) {
@@ -605,16 +883,27 @@ async function showDocumentDetails(docId) {
       ["Father's name", details.father_name],
       ['PAN number', details.pan_number],
       ['Document number', details.document_number],
+      ['Aadhaar number', details.aadhaar_number],
+      ['ABHA number', details.abha_number],
+      ['Date of birth', details.date_of_birth],
       ['Mobile / phone', details.mobile_or_phone],
       ['Email', details.email],
       ['Issue date', details.issue_date],
       ['Expiry date', details.expiry_date],
-      ['Status', expiryStatusLabel(details.expiry_status)],
-      ['Time remaining', expiryTimeLabel(details)],
-    ];
-    $('#dialogFields').innerHTML = fields.map(([label, value]) =>
-      `<div><span>${esc(label)}</span><b>${esc(value || 'Not available')}</b></div>`
-    ).join('');
+    ].filter(([, value]) =>
+      value && value !== 'Not available' && value !== 'unavailable'
+    );
+    if (details.expiry_status && details.expiry_status !== 'unavailable') {
+      fields.push(['Status', expiryStatusLabel(details.expiry_status)]);
+      if (details.expiry_date && details.expiry_date !== 'Not available') {
+        fields.push(['Time remaining', expiryTimeLabel(details)]);
+      }
+    }
+    $('#dialogFields').innerHTML = fields.length
+      ? fields.map(([label, value]) =>
+          `<div><span>${esc(label)}</span><b>${esc(value)}</b></div>`
+        ).join('')
+      : '<p class="assistant-status">No document details were identified.</p>';
     $('#dialogSummary').innerHTML = formatAssistantSummary(summaryMessage(doc));
     $('#dialogExtractedText').textContent = doc.extracted_text || 'No text was extracted from this document.';
     if (['pending', 'processing', 'generating'].includes(doc.summary_status)) {
@@ -687,13 +976,13 @@ async function watchExtraction(docId, title, alertEl) {
       const doc = await api('/api/documents/' + docId);
       if (doc.extraction_status === 'completed') {
         banner(alertEl, '"' + title + '" uploaded; text extraction completed.', 'ok');
-        loadDocs();
+        loadDocs(); loadDashboardOverview();
         return;
       }
       if (doc.extraction_status === 'failed' || doc.extraction_status === 'no_text') {
         const detail = doc.extraction_error ? ' ' + doc.extraction_error : '';
         banner(alertEl, '"' + title + '" uploaded, but extraction ' + doc.extraction_status + '.' + detail, 'err');
-        loadDocs();
+        loadDocs(); loadDashboardOverview();
         return;
       }
     } catch (err) {
@@ -728,6 +1017,7 @@ $('#upForm').onsubmit = async e => {
     $('#picked').classList.remove('show');
     loadActivity();
     loadDocs();
+    loadDashboardOverview();
     if (r.extraction_status === 'pending') watchExtraction(r.id, r.title, al);
   } catch (err) {
     const message = err instanceof TypeError && err.message === 'Failed to fetch'
@@ -783,7 +1073,7 @@ $('#profForm').onsubmit = async e => {
   }
 };
 
-loadDash();
+loadDashboardOverview();
 </script>
 </body>
 </html>

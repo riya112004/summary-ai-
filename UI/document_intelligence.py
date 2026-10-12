@@ -280,6 +280,33 @@ def _find_date_after_label(
     return False, None
 
 
+def _driving_licence_adjacent_dates(
+    text: str,
+) -> tuple[Optional[str], Optional[str]]:
+    """Read issue/validity dates flanking an issue label in flat OCR text."""
+    normalized_text = " ".join(text.split())
+    for match in _ISSUE_LABEL.finditer(normalized_text):
+        preceding_date = re.search(
+            rf"({_DATE_PATTERN})\s*$",
+            normalized_text[:match.start()],
+            re.IGNORECASE,
+        )
+        following_date = re.match(
+            rf"\s*[:#-]?\s*({_DATE_PATTERN})\b",
+            normalized_text[match.end():],
+            re.IGNORECASE,
+        )
+        if not preceding_date or not following_date:
+            continue
+        issue_date = preceding_date.group(1)
+        expiry_date = following_date.group(1)
+        parsed_issue = _date_from_text(issue_date)
+        parsed_expiry = _date_from_text(expiry_date)
+        if parsed_issue and parsed_expiry and parsed_expiry > parsed_issue:
+            return issue_date, expiry_date
+    return None, None
+
+
 def _document_type(text: str) -> str:
     normalized_text = re.sub(r"\[unclear\]", " ", text, flags=re.IGNORECASE)
     if (
@@ -397,6 +424,14 @@ def extract_document_fields(
     expiry_present, expiry_date = _find_date_after_label(
         text, _EXPIRY_LABEL, prefer_preceding=prefer_preceding_dates
     )
+    if document_type == "Driving licence" and not expiry_present:
+        layout_issue_date, layout_expiry_date = (
+            _driving_licence_adjacent_dates(text)
+        )
+        if layout_issue_date and layout_expiry_date:
+            issue_date = layout_issue_date
+            expiry_present = True
+            expiry_date = layout_expiry_date
     parsed_expiry = _date_from_text(expiry_date) if expiry_date else None
     current_date = today or date.today()
 

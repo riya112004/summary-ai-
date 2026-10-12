@@ -26,9 +26,10 @@ Open http://127.0.0.1:8000 → `/login`
 ## Pages
 
 - `/login` — Sign In / Sign Up tabs (name, email, phone, new password, confirm password)
-- `/dashboard` — single-page shell with four views:
-  - **AI Assistant** — chat-style, automatically visible summaries and source-backed details for all caller-owned documents
+- `/dashboard` — single-page shell with five views:
+  - **Dashboard** — caller-owned upload counts, extraction progress, latest uploads, and date-aware daily, weekly, monthly, and quarterly summaries from structured uploaded plans
   - **Activity** — a private, paginated account activity timeline for sign-ins, profile changes, document uploads/downloads/deletions, and extraction/summary retries
+  - **AI Assistant** — chat-style, automatically visible summaries and source-backed details for all caller-owned documents
   - **Upload** — optional title + drag-and-drop / click-to-browse, 25 MB cap
   - **Documents** — searchable table, download, delete
   - **Profile** (avatar menu) — edit name and phone, change password; **email is locked**
@@ -43,6 +44,8 @@ Open http://127.0.0.1:8000 → `/login`
 | GET | `/api/me` | Current user |
 | PUT | `/api/me` | Update name / phone / password (email immutable) |
 | GET | `/api/activity` | Paginated activity history for the authenticated user |
+| GET | `/api/dashboard-overview` | Caller-owned document counts and the five latest uploads |
+| GET | `/api/dashboard-plan` | Daily, weekly, monthly, and quarterly highlights from the user's active structured plan |
 | POST | `/api/upload` | multipart `file` + `title` |
 | GET | `/api/documents?q=&limit=&skip=` | Paged caller-owned documents with the matching total count |
 | GET | `/api/documents/{id}` | Caller-owned document metadata and extracted raw text |
@@ -101,10 +104,19 @@ raw OCR lines as a summary. When the local model is unavailable, the same
 structured summary is generated directly from saved text. Poor-quality OCR
 with no reliable details is marked `needs_review`. A prompt-version change
 marks older cached summaries stale so the startup worker can regenerate them.
-The dashboard opens to a chat-style AI Document Assistant timeline, not a chat
-input. It loads the document list in pages and automatically displays one
-assistant-style message per saved document; document statistics, recent-upload
-tables, and separate expiry-alert panels are not shown on this screen.
+The dashboard opens to a personal overview of the authenticated user's uploaded
+plans and documents, including total uploads, completed text extraction, current
+processing count, and the five latest uploads. Structured plans with an explicit
+`Period:` date range and `YEAR n / QUARTER n` and `YEAR n / MONTH n` sections
+also show today's weekday focus and routine, this week's activities and due
+dates, the current plan month's focus and review date, and the current quarter's
+focus and review milestone. Summaries are derived from that user's saved
+extracted text; older `.txt` uploads that were saved before text extraction was
+supported can be re-extracted from the overview or Documents view. Plans
+outside their date range are identified as inactive rather than shown as
+today's schedule. The paginated activity history is available in its own view.
+The separate AI Assistant view loads saved documents in pages and displays one
+assistant-style message per document.
 Deterministically extracted names,
 identifiers, dates, contact details, insurance values, and marks/result lines
 are derived from saved text; expiry countdowns are calculated by the backend.

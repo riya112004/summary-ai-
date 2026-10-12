@@ -247,7 +247,7 @@ h1, h2, h3 { margin: 0; letter-spacing: -0.02em; font-weight: 650; }
 .nav button.active { color: var(--txt); background: rgba(255, 255, 255, 0.08); }
 @media (max-width: 680px) {
   .topbar { flex-wrap: wrap; }
-  .nav { order: 3; width: 100%; justify-content: space-between; }
+  .nav { order: 3; width: 100%; justify-content: space-between; flex-wrap: wrap; }
   .nav button { padding: 8px 10px; font-size: 13.5px; }
   .brand-sub { display: none; }
 }
@@ -323,6 +323,64 @@ main { padding: 28px clamp(16px, 4vw, 34px) 60px; max-width: 1240px; margin: 0 a
 .stat:nth-child(4) .ico svg { stroke: var(--ok); }
 .stat .lbl { font-size: 12.5px; color: var(--muted); letter-spacing: 0.04em; text-transform: uppercase; }
 .stat .val { font-size: 30px; font-weight: 680; letter-spacing: -0.03em; line-height: 1.15; margin-top: 2px; }
+.overview-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.overview-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.overview-panel { margin-bottom: 18px; }
+.overview-documents { display: grid; }
+.overview-document {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) minmax(150px, auto) auto;
+  align-items: center;
+  gap: 13px;
+  padding: 13px 2px;
+  border-bottom: 1px solid var(--stroke);
+}
+.overview-document:last-child { border-bottom: 0; }
+.overview-document-info { min-width: 0; }
+.overview-document-info b, .overview-document-info span { display: block; overflow-wrap: anywhere; }
+.overview-document-info b { font-size: 13.5px; font-weight: 600; }
+.overview-document-info span { color: var(--muted); font-size: 11.5px; }
+.overview-document-status { display: flex; flex-wrap: wrap; gap: 6px; }
+.overview-document-status .pill { white-space: nowrap; }
+.overview-document-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.overview-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; padding-top: 14px; }
+.plan-panel { margin-bottom: 18px; }
+.plan-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; padding-top: 3px; }
+.plan-card {
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--stroke);
+  border-radius: 13px;
+  background: rgba(255, 255, 255, 0.025);
+}
+.plan-card-today { border-color: rgba(109, 139, 255, 0.34); background: rgba(109, 139, 255, 0.055); }
+.plan-kicker { display: block; margin-bottom: 7px; color: var(--brand); font-size: 10.5px; font-weight: 700; letter-spacing: 0.055em; }
+.plan-card h4 { margin: 0 0 7px; font-size: 14px; }
+.plan-card p { margin: 7px 0; color: var(--muted); font-size: 12.5px; line-height: 1.55; overflow-wrap: anywhere; }
+.plan-weekdays { margin: 8px 0; padding-left: 18px; color: var(--muted); font-size: 12px; }
+.plan-weekdays li { margin: 4px 0; }
+.plan-weekdays b, .plan-review b { color: var(--txt); }
+.plan-review { padding-top: 8px; border-top: 1px solid var(--stroke); }
+.plan-routine { margin-top: 10px; color: var(--muted); font-size: 12px; }
+.plan-routine summary { width: fit-content; cursor: pointer; color: var(--brand); font-weight: 600; }
+.plan-routine p { margin-top: 7px; }
+.plan-notice { padding: 14px; border: 1px solid var(--stroke); border-radius: 11px; color: var(--muted); }
+@media (max-width: 760px) {
+  .overview-stats { grid-template-columns: 1fr; gap: 10px; }
+  .overview-stats .stat { padding: 14px; }
+  .overview-stats .ico { float: right; margin: 0; }
+  .overview-stats .val { font-size: 25px; }
+  .overview-document { grid-template-columns: auto minmax(0, 1fr) auto; }
+  .overview-document-status { grid-column: 2; }
+  .overview-document-actions { grid-column: 3; grid-row: 1 / span 2; flex-direction: column; }
+  .plan-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 480px) {
+  .overview-head { align-items: center; }
+  .overview-document { grid-template-columns: auto minmax(0, 1fr); }
+  .overview-document-status { grid-column: 2; }
+  .overview-document-actions { grid-column: 2; grid-row: auto; flex-direction: row; justify-content: flex-start; }
+}
 
 .panel { padding: 21px; }
 .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-bottom: 16px; flex-wrap: wrap; }
