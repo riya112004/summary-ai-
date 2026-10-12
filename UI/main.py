@@ -1,6 +1,8 @@
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
+import hashlib
 import io
+import json
 import logging
 import os
 import re
@@ -11,9 +13,13 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Optional
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlparse
+from urllib.request import Request as URLRequest, urlopen
 
 from bson import ObjectId
 from bson.errors import InvalidId
+from pymongo import ReturnDocument
 from dotenv import load_dotenv
 from fastapi import FastAPI, Depends, HTTPException, Request, UploadFile, File, Form
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
@@ -23,6 +29,14 @@ from jose import JWTError, jwt
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorGridFSBucket
 from passlib.context import CryptContext
 from pydantic import BaseModel, EmailStr, Field, field_validator
+
+from document_intelligence import (
+    assess_extracted_text,
+    build_document_summary,
+    expiry_alert_priority,
+    extract_document_fields,
+    validate_extractive_summary,
+)
 
 try:
     import fitz
@@ -61,6 +75,16 @@ OCR_LOG_TEXT = os.getenv("OCR_LOG_TEXT", "").strip().lower() in {
     "true",
     "yes",
 }
+OLLAMA_URL = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434").rstrip("/")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen3:0.6b")
+OLLAMA_TIMEOUT_SECONDS = int(os.getenv("OLLAMA_TIMEOUT_SECONDS", "180"))
+SUMMARY_MAX_INPUT_CHARS = 30000
+SUMMARY_PROMPT_VERSION = "extractive-details-v5"
+SUMMARY_MAX_ATTEMPTS = 3
+SUMMARY_RETRY_DELAYS = (2, 5)
+SUMMARY_PROCESSING_LEASE_SECONDS = OLLAMA_TIMEOUT_SECONDS + 60
+SUMMARY_RECOVERY_INTERVAL_SECONDS = 60
+EXPIRING_SOON_DAYS = 30
 
 pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -75,6 +99,10 @@ ocr_engine = None
 ocr_executor: Optional[ThreadPoolExecutor] = None
 extraction_tasks: set[asyncio.Task] = set()
 extraction_semaphore = asyncio.Semaphore(1)
+summary_tasks: set[asyncio.Task] = set()
+summary_doc_ids: set[str] = set()
+summary_semaphore = asyncio.Semaphore(1)
+summary_recovery_task: Optional[asyncio.Task] = None
 
 # Configure logging to print to terminal at every step
 logging.basicConfig(
@@ -91,7 +119,7 @@ print("[INIT] Logging configured - printing to terminal enabled")
 
 @app.on_event("startup")
 async def startup():
-    global client, db, bucket
+    global client, db, bucket, summary_recovery_task
     print("[STARTUP] Initializing MongoDB connection...")
     logger.info("STARTUP: Initializing MongoDB connection to DB=%s", DB_NAME)
     client = AsyncIOMotorClient(MONGO_URI, serverSelectionTimeoutMS=20000)
@@ -102,7 +130,49 @@ async def startup():
     await db.documents.create_index("extracted_text")
     print("[STARTUP] MongoDB connected and indexes created")
     logger.info("STARTUP: MongoDB connected and indexes created")
-    async for doc in db.documents.find({"extraction_status": "pending"}):
+    stale_processing_before = datetime.now(timezone.utc) - timedelta(
+        seconds=SUMMARY_PROCESSING_LEASE_SECONDS
+    )
+    await db.documents.update_many(
+        {
+            "summary_status": "processing",
+            "$or": [
+                {"summary_started_at": {"$lt": stale_processing_before}},
+                {"summary_started_at": {"$exists": False}},
+            ],
+        },
+        {"$set": {"summary_status": "pending", "summary_error": None}},
+    )
+    async for doc in db.documents.find({
+        "extracted_text": {"$exists": True, "$nin": ["", None]},
+    }):
+        if doc.get("extraction_status") != "completed":
+            await db.documents.update_one(
+                {"_id": doc["_id"], "user_id": doc["user_id"]},
+                {"$set": {
+                    "extraction_status": "completed",
+                    "extraction_error": None,
+                }},
+            )
+        if doc.get("summary_status") == "failed":
+            await db.documents.update_one(
+                {"_id": doc["_id"], "user_id": doc["user_id"]},
+                {"$set": {
+                    "summary_status": "pending",
+                    "summary_attempts": 0,
+                    "summary_error": None,
+                }},
+            )
+        _schedule_summary(doc["_id"], doc["user_id"])
+    summary_recovery_task = asyncio.create_task(_recover_stale_summary_jobs())
+    async for doc in db.documents.find({
+        "extraction_status": "pending",
+        "$or": [
+            {"extracted_text": {"$exists": False}},
+            {"extracted_text": ""},
+            {"extracted_text": None},
+        ],
+    }):
         task = asyncio.create_task(
             _process_document_extraction(doc["_id"], doc["user_id"])
         )
@@ -112,6 +182,12 @@ async def startup():
 @app.on_event("shutdown")
 async def shutdown():
     global ocr_executor
+    if summary_recovery_task:
+        summary_recovery_task.cancel()
+        try:
+            await summary_recovery_task
+        except asyncio.CancelledError:
+            pass
     if client:
         client.close()
     if ocr_executor is not None:
@@ -922,6 +998,8 @@ async def _process_document_extraction(doc_id: ObjectId, user_id: ObjectId):
             }
         },
     )
+    if status == "completed":
+        _schedule_summary(doc_id, user_id)
 
 
 async def _process_uploaded_document_extraction(
@@ -966,6 +1044,8 @@ async def _process_uploaded_document_extraction(
             }
         },
     )
+    if status == "completed":
+        _schedule_summary(doc_id, user_id)
 
 
 def _schedule_extraction(task: asyncio.Task):
@@ -984,6 +1064,402 @@ def _schedule_extraction(task: asyncio.Task):
             )
 
     task.add_done_callback(on_done)
+
+
+def _summarize_with_ollama(extracted_text: str) -> str:
+    parsed_url = urlparse(OLLAMA_URL)
+    if (
+        parsed_url.scheme not in {"http", "https"}
+        or parsed_url.hostname not in {"localhost", "127.0.0.1", "::1"}
+    ):
+        raise RuntimeError(
+            "OLLAMA_URL must use a localhost address; external LLM services are not allowed."
+        )
+    review_reason = assess_extracted_text(extracted_text)
+    if review_reason:
+        raise ValueError(review_reason)
+    source_text = extracted_text[:SUMMARY_MAX_INPUT_CHARS]
+    prompt = (
+        "Create a compact but useful extractive summary from the document text. "
+        "Select up to 12 important complete source lines, prioritizing the "
+        "document type and printed identity/details, names, document numbers, "
+        "dates, validity, marks/results, and insurance terms when present. "
+        "Copy each selected line EXACTLY as written. Do not paraphrase, correct "
+        "OCR, change punctuation, add labels, calculate dates, or infer facts. "
+        "Output only copied source lines, one per line, without bullets, "
+        "headings, explanations, or quotation marks. Return an empty response "
+        "if the text has no useful document information.\n\n"
+        "<document_text>\n"
+        f"{source_text}\n"
+        "</document_text>"
+    )
+    payload = json.dumps({
+        "model": OLLAMA_MODEL,
+        "prompt": prompt,
+        "stream": False,
+        "think": False,
+        "options": {"temperature": 0, "num_predict": 500},
+    }).encode("utf-8")
+    request = URLRequest(
+        f"{OLLAMA_URL}/api/generate",
+        data=payload,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urlopen(request, timeout=OLLAMA_TIMEOUT_SECONDS) as response:
+            result = json.loads(response.read().decode("utf-8"))
+    except HTTPError as exc:
+        raise RuntimeError(f"Local Ollama returned HTTP {exc.code}") from exc
+    except URLError as exc:
+        raise RuntimeError(
+            "Cannot connect to local Ollama. Start Ollama and check OLLAMA_URL."
+        ) from exc
+    if not isinstance(result, dict):
+        raise RuntimeError("Local Ollama returned an invalid response.")
+    summary = result.get("response")
+    if not isinstance(summary, str) or not summary.strip():
+        raise RuntimeError("Local Ollama returned an empty summary.")
+    validate_extractive_summary(summary, source_text)
+    return build_document_summary(extracted_text)
+
+
+async def _process_document_summary(doc_id: ObjectId, user_id: ObjectId):
+    async with summary_semaphore:
+        doc = await db.documents.find_one({"_id": doc_id, "user_id": user_id})
+        if not doc or doc.get("extraction_status") != "completed":
+            return
+        extracted_text = (doc.get("extracted_text") or "").strip()
+        if not extracted_text:
+            await db.documents.update_one(
+                {"_id": doc_id, "user_id": user_id},
+                {"$set": {"summary": "", "summary_status": "unavailable"}},
+            )
+            return
+        source_hash = hashlib.sha256(
+            f"{SUMMARY_PROMPT_VERSION}\n{extracted_text}".encode("utf-8")
+        ).hexdigest()
+        if (
+            doc.get("summary_status") == "completed"
+            and doc.get("summary")
+            and doc.get("summary_source_hash") == source_hash
+            and doc.get("summary_prompt_version") == SUMMARY_PROMPT_VERSION
+        ):
+            return
+        if (
+            doc.get("summary_status") == "needs_review"
+            and doc.get("summary_source_hash") == source_hash
+            and doc.get("summary_prompt_version") == SUMMARY_PROMPT_VERSION
+        ):
+            return
+
+        source_filter = {
+            "_id": doc_id,
+            "user_id": user_id,
+            "extracted_text": doc["extracted_text"],
+        }
+        claim_before = datetime.now(timezone.utc) - timedelta(
+            seconds=SUMMARY_PROCESSING_LEASE_SECONDS
+        )
+        claimed = await db.documents.find_one_and_update(
+            {
+                **source_filter,
+                "$and": [
+                    {
+                        "$or": [
+                            {"summary_status": {"$ne": "processing"}},
+                            {"summary_started_at": {"$lt": claim_before}},
+                        ]
+                    },
+                    {
+                        "$or": [
+                            {"summary_status": {"$ne": "completed"}},
+                            {"summary_source_hash": {"$ne": source_hash}},
+                            {"summary_prompt_version": {"$ne": SUMMARY_PROMPT_VERSION}},
+                        ]
+                    },
+                    {
+                        "$or": [
+                            {"summary_status": {"$ne": "needs_review"}},
+                            {"summary_source_hash": {"$ne": source_hash}},
+                            {"summary_prompt_version": {"$ne": SUMMARY_PROMPT_VERSION}},
+                        ]
+                    },
+                ],
+            },
+            {
+                "$set": {
+                    "summary": "",
+                    "summary_status": "processing",
+                    "summary_error": None,
+                    "summary_note": None,
+                    "summary_method": None,
+                    "summary_started_at": datetime.now(timezone.utc),
+                    "summary_source_hash": source_hash,
+                    "summary_prompt_version": SUMMARY_PROMPT_VERSION,
+                    "summary_details": extract_document_fields(
+                        extracted_text, expiring_soon_days=EXPIRING_SOON_DAYS
+                    ),
+                    "summary_review_reason": None,
+                },
+                "$inc": {"summary_attempts": 1},
+            },
+            return_document=ReturnDocument.AFTER,
+        )
+        if claimed is None:
+            logger.info("Summary job already claimed for document %s", doc_id)
+            return
+
+        attempt = int(claimed.get("summary_attempts", 1))
+        while True:
+            try:
+                summary = await asyncio.to_thread(
+                    _summarize_with_ollama, extracted_text
+                )
+            except ValueError as exc:
+                review_reason = assess_extracted_text(extracted_text)
+                fallback_summary = (
+                    build_document_summary(extracted_text)
+                    if review_reason is None
+                    else ""
+                )
+                if fallback_summary:
+                    logger.warning(
+                        "Using formatted source-grounded summary for document %s "
+                        "because Ollama output was not verifiable: %s",
+                        doc_id,
+                        exc,
+                    )
+                    await db.documents.update_one(
+                        source_filter,
+                        {"$set": {
+                            "summary": fallback_summary,
+                            "summary_status": "completed",
+                            "summary_error": None,
+                            "summary_review_reason": None,
+                            "summary_note": (
+                                "Formatted from saved OCR text; verify OCR-sensitive "
+                                "details against the original document."
+                            ),
+                            "summary_method": "structured_source_fallback",
+                            "summary_completed_at": datetime.now(timezone.utc),
+                            "summary_source_hash": source_hash,
+                            "summary_prompt_version": SUMMARY_PROMPT_VERSION,
+                            "summary_details": extract_document_fields(
+                                extracted_text,
+                                expiring_soon_days=EXPIRING_SOON_DAYS,
+                            ),
+                        }},
+                    )
+                    return
+                logger.info(
+                    "Document summary needs review for %s: %s", doc_id, exc
+                )
+                await db.documents.update_one(
+                    source_filter,
+                    {"$set": {
+                        "summary": "",
+                        "summary_status": "needs_review",
+                        "summary_error": str(exc),
+                        "summary_review_reason": str(exc),
+                        "summary_note": None,
+                        "summary_method": None,
+                        "summary_completed_at": datetime.now(timezone.utc),
+                        "summary_source_hash": source_hash,
+                        "summary_prompt_version": SUMMARY_PROMPT_VERSION,
+                    }},
+                )
+                return
+            except Exception as exc:
+                logger.warning(
+                    "Document summary attempt %s failed for %s: %s",
+                    attempt,
+                    doc_id,
+                    exc,
+                    exc_info=True,
+                )
+                if attempt < SUMMARY_MAX_ATTEMPTS:
+                    await asyncio.sleep(SUMMARY_RETRY_DELAYS[attempt - 1])
+                    attempt += 1
+                    await db.documents.update_one(
+                        source_filter,
+                        {"$inc": {"summary_attempts": 1}},
+                    )
+                    continue
+                fallback_summary = (
+                    build_document_summary(extracted_text)
+                    if assess_extracted_text(extracted_text) is None
+                    else ""
+                )
+                if fallback_summary:
+                    logger.warning(
+                        "Ollama remained unavailable for %s; saving a "
+                        "source-grounded structured summary instead",
+                        doc_id,
+                    )
+                    await db.documents.update_one(
+                        source_filter,
+                        {"$set": {
+                            "summary": fallback_summary,
+                            "summary_status": "completed",
+                            "summary_error": None,
+                            "summary_review_reason": None,
+                            "summary_note": (
+                                "Formatted from saved OCR text because the local "
+                                "model was unavailable; verify OCR-sensitive "
+                                "details against the original document."
+                            ),
+                            "summary_method": "structured_source_fallback",
+                            "summary_completed_at": datetime.now(timezone.utc),
+                            "summary_source_hash": source_hash,
+                            "summary_prompt_version": SUMMARY_PROMPT_VERSION,
+                            "summary_details": extract_document_fields(
+                                extracted_text,
+                                expiring_soon_days=EXPIRING_SOON_DAYS,
+                            ),
+                        }},
+                    )
+                    return
+                await db.documents.update_one(
+                    source_filter,
+                    {"$set": {
+                        "summary": "",
+                        "summary_status": "failed",
+                        "summary_error": str(exc),
+                        "summary_note": None,
+                        "summary_method": None,
+                        "summary_completed_at": datetime.now(timezone.utc),
+                        "summary_source_hash": source_hash,
+                        "summary_prompt_version": SUMMARY_PROMPT_VERSION,
+                    }},
+                )
+                return
+
+            await db.documents.update_one(
+                source_filter,
+                {"$set": {
+                    "summary": summary,
+                    "summary_status": "completed",
+                    "summary_error": None,
+                    "summary_review_reason": None,
+                    "summary_completed_at": datetime.now(timezone.utc),
+                    "summary_source_hash": source_hash,
+                    "summary_prompt_version": SUMMARY_PROMPT_VERSION,
+                    "summary_note": None,
+                    "summary_method": "structured_ollama_verified",
+                    "summary_details": extract_document_fields(
+                        extracted_text, expiring_soon_days=EXPIRING_SOON_DAYS
+                    ),
+                }},
+            )
+            return
+
+
+def _schedule_summary(doc_id: ObjectId, user_id: ObjectId):
+    key = str(doc_id)
+    if key in summary_doc_ids:
+        return
+    summary_doc_ids.add(key)
+    task = asyncio.create_task(_process_document_summary(doc_id, user_id))
+    summary_tasks.add(task)
+
+    def on_done(completed: asyncio.Task):
+        summary_tasks.discard(completed)
+        summary_doc_ids.discard(key)
+        if completed.cancelled():
+            logger.warning("Background summary task was cancelled for %s", key)
+            return
+        error = completed.exception()
+        if error:
+            logger.error(
+                "Background summary task crashed for %s",
+                key,
+                exc_info=(type(error), error, error.__traceback__),
+            )
+
+    task.add_done_callback(on_done)
+
+
+async def _recover_stale_summary_jobs():
+    while True:
+        await asyncio.sleep(SUMMARY_RECOVERY_INTERVAL_SECONDS)
+        try:
+            stale_before = datetime.now(timezone.utc) - timedelta(
+                seconds=SUMMARY_PROCESSING_LEASE_SECONDS
+            )
+            cursor = db.documents.find({
+                "summary_status": "processing",
+                "summary_started_at": {"$lt": stale_before},
+                "extracted_text": {"$exists": True, "$nin": ["", None]},
+            })
+            async for doc in cursor:
+                result = await db.documents.update_one(
+                    {
+                        "_id": doc["_id"],
+                        "user_id": doc["user_id"],
+                        "summary_status": "processing",
+                        "summary_started_at": doc.get("summary_started_at"),
+                    },
+                    {"$set": {"summary_status": "pending", "summary_error": None}},
+                )
+                if result.modified_count:
+                    logger.warning(
+                        "Re-queued stale summary job for document %s", doc["_id"]
+                    )
+                    _schedule_summary(doc["_id"], doc["user_id"])
+        except Exception:
+            logger.exception("Summary job recovery scan failed")
+
+
+def _document_response(doc: dict, include_text: bool = False) -> dict:
+    extracted_text = doc.get("extracted_text") or ""
+    details = extract_document_fields(
+        extracted_text, expiring_soon_days=EXPIRING_SOON_DAYS
+    )
+    summary = doc.get("summary", "")
+    summary_status = doc.get(
+        "summary_status", "pending" if extracted_text else "unavailable"
+    )
+    summary_error = doc.get("summary_error")
+    if extracted_text and doc.get("extraction_status") == "completed":
+        current_source_hash = hashlib.sha256(
+            f"{SUMMARY_PROMPT_VERSION}\n{extracted_text.strip()}".encode("utf-8")
+        ).hexdigest()
+        if (
+            summary_status in {"completed", "failed", "needs_review"}
+            and (
+                doc.get("summary_source_hash") != current_source_hash
+                or doc.get("summary_prompt_version") != SUMMARY_PROMPT_VERSION
+            )
+        ):
+            summary = ""
+            summary_status = "pending"
+            summary_error = None
+        elif summary_status == "generating":
+            summary_status = "processing"
+    response = {
+        "id": str(doc["_id"]),
+        "title": doc.get("title"),
+        "filename": doc.get("filename"),
+        "content_type": doc.get("content_type"),
+        "size": doc.get("size", 0),
+        "uploaded_at": doc["uploaded_at"].isoformat() if doc.get("uploaded_at") else None,
+        "has_extracted_text": bool(extracted_text),
+        "extraction_status": doc.get("extraction_status", "pending"),
+        "extraction_error": doc.get("extraction_error"),
+        "summary": summary,
+        "summary_status": summary_status,
+        "summary_error": summary_error,
+        "summary_attempts": doc.get("summary_attempts", 0),
+        "summary_details": doc.get("summary_details"),
+        "summary_review_reason": doc.get("summary_review_reason"),
+        "summary_note": doc.get("summary_note"),
+        "summary_method": doc.get("summary_method"),
+        "details": details,
+    }
+    if include_text:
+        response["extracted_text"] = extracted_text
+    return response
 
 
 # ---------------- pages ----------------
@@ -1115,6 +1591,35 @@ async def stats(user=Depends(current_user)):
     }
 
 
+@app.get("/api/document-alerts")
+async def document_alerts(user=Depends(current_user), limit: int = 50):
+    cursor = db.documents.find({
+        "user_id": user["_id"],
+        "extracted_text": {"$nin": ["", None]},
+    }).sort("uploaded_at", -1)
+    alerts = []
+    async for doc in cursor:
+        item = _document_response(doc)
+        if item["details"]["expiry_status"] in {
+            "expired", "expiring_soon", "verification_required"
+        }:
+            alerts.append(item)
+    alerts.sort(
+        key=lambda item: (
+            expiry_alert_priority(item["details"]),
+            item["details"]["days_remaining"]
+            if item["details"]["days_remaining"] is not None
+            else 0,
+            item.get("uploaded_at") or "",
+        )
+    )
+    total_documents = await db.documents.count_documents({"user_id": user["_id"]})
+    return {
+        "alerts": alerts[:max(1, min(limit, 200))],
+        "total_documents": total_documents,
+    }
+
+
 # ---------------- documents ----------------
 @app.post("/api/upload")
 async def upload(
@@ -1166,6 +1671,10 @@ async def upload(
         "extraction_status": extraction_status,
         "extraction_error": None,
         "extraction_started_at": None,
+        "summary": "",
+        "summary_status": "pending" if supported_format else "unavailable",
+        "summary_attempts": 0,
+        "summary_error": None,
     }
     res = await db.documents.insert_one(doc)
     if supported_format:
@@ -1193,24 +1702,28 @@ async def upload(
 
 
 @app.get("/api/documents")
-async def list_documents(user=Depends(current_user), q: str = "", limit: int = 100):
+async def list_documents(
+    user=Depends(current_user),
+    q: str = "",
+    limit: int = 100,
+    skip: int = 0,
+):
     query = {"user_id": user["_id"]}
     if q.strip():
         query["title"] = {"$regex": q.strip(), "$options": "i"}
-    cur = db.documents.find(query).sort("uploaded_at", -1).limit(min(limit, 200))
+    page_size = max(1, min(limit, 200))
+    offset = max(0, skip)
+    total_documents = await db.documents.count_documents(query)
+    cur = (
+        db.documents.find(query)
+        .sort("uploaded_at", -1)
+        .skip(offset)
+        .limit(page_size)
+    )
     out = []
     async for d in cur:
-        out.append({
-            "id": str(d["_id"]),
-            "title": d.get("title"),
-            "filename": d.get("filename"),
-            "content_type": d.get("content_type"),
-            "size": d.get("size", 0),
-            "uploaded_at": d["uploaded_at"].isoformat() if d.get("uploaded_at") else None,
-            "has_extracted_text": bool(d.get("extracted_text")),
-            "extraction_status": d.get("extraction_status", "pending"),
-        })
-    return {"documents": out}
+        out.append(_document_response(d))
+    return {"documents": out, "total_documents": total_documents}
 
 
 async def _owned_doc(doc_id: str, user):
@@ -1228,23 +1741,47 @@ async def _owned_doc(doc_id: str, user):
 @app.get("/api/documents/{doc_id}")
 async def get_document(doc_id: str, user=Depends(current_user)):
     d = await _owned_doc(doc_id, user)
-    return {
-        "id": str(d["_id"]),
-        "title": d.get("title"),
-        "filename": d.get("filename"),
-        "content_type": d.get("content_type"),
-        "size": d.get("size", 0),
-        "uploaded_at": d["uploaded_at"].isoformat() if d.get("uploaded_at") else None,
-        "has_extracted_text": bool(d.get("extracted_text")),
-        "extracted_text": d.get("extracted_text"),
-        "extraction_status": d.get("extraction_status", "pending"),
-        "extraction_error": d.get("extraction_error"),
-    }
+    return _document_response(d, include_text=True)
+
+
+@app.post("/api/documents/{doc_id}/summarize")
+async def retry_document_summary(doc_id: str, user=Depends(current_user)):
+    doc = await _owned_doc(doc_id, user)
+    extracted_text = (doc.get("extracted_text") or "").strip()
+    if doc.get("extraction_status") != "completed" or not extracted_text:
+        raise HTTPException(
+            status_code=409,
+            detail="This document does not have completed extracted text to summarize.",
+        )
+    if str(doc["_id"]) in summary_doc_ids:
+        return {"summary_status": "processing"}
+    await db.documents.update_one(
+        {"_id": doc["_id"], "user_id": user["_id"]},
+        {"$set": {
+            "summary_status": "pending",
+            "summary_error": None,
+            "summary_attempts": 0,
+        }},
+    )
+    _schedule_summary(doc["_id"], user["_id"])
+    return {"summary_status": "pending"}
 
 
 @app.post("/api/documents/{doc_id}/extract-text")
 async def extract_document_text(doc_id: str, user=Depends(current_user)):
     d = await _owned_doc(doc_id, user)
+    existing_text = (d.get("extracted_text") or "").strip()
+    if existing_text:
+        return {
+            "id": str(d["_id"]),
+            "extracted_text": d["extracted_text"],
+            "extraction_status": (
+                "completed"
+                if d.get("extraction_status") == "pending"
+                else d.get("extraction_status", "completed")
+            ),
+            "extraction_error": d.get("extraction_error"),
+        }
     stream = await bucket.open_download_stream(d["gridfs_id"])
     raw = await stream.read()
 
@@ -1282,6 +1819,17 @@ async def extract_document_text(doc_id: str, user=Depends(current_user)):
             }
         },
     )
+    if extraction_status == "completed":
+        await db.documents.update_one(
+            {"_id": d["_id"], "user_id": user["_id"]},
+            {"$set": {
+                "summary": "",
+                "summary_status": "pending",
+                "summary_error": None,
+                "summary_source_hash": None,
+            }},
+        )
+        _schedule_summary(d["_id"], user["_id"])
     return {
         "id": str(d["_id"]),
         "extracted_text": extracted_text,

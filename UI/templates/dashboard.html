@@ -26,7 +26,7 @@
   </div>
 
   <nav class="nav">
-    <button class="active" data-view="v-dash">Dashboard</button>
+    <button class="active" data-view="v-dash">AI Assistant</button>
     <button data-view="v-upload">Upload</button>
     <button data-view="v-docs">Documents</button>
   </nav>
@@ -62,55 +62,18 @@
   <!-- ============ DASHBOARD ============ -->
   <section class="view active" id="v-dash">
     <div class="page-head">
-      <h2>Hey <span id="greetName">{{ user.name.split(' ')[0] }}</span> 👋</h2>
-      <p>Here is what is happening in your workspace.</p>
+      <h2>AI Document Assistant</h2>
+      <p>Your saved documents, details, and summaries in one place.</p>
     </div>
 
-    <div class="stats">
-      <div class="stat glass">
-        <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M9 13h6M9 17h6"/></svg></div>
-        <div class="lbl">Total Documents</div>
-        <div class="val" id="s-total">—</div>
+    <div class="panel glass summary-dashboard">
+      <div class="panel-head assistant-heading">
+        <div><h3>AI Document Assistant</h3><div class="sub" id="summaryCount">Loading your documents…</div></div>
+        <button class="btn btn-ghost btn-sm" id="refreshSummariesBtn" type="button">Refresh</button>
       </div>
-      <div class="stat glass">
-        <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 1.7 4 3 9 3s9-1.3 9-3V5M3 12c0 1.7 4 3 9 3s9-1.3 9-3"/></svg></div>
-        <div class="lbl">Storage Used</div>
-        <div class="val" id="s-size">—</div>
+      <div id="dashboardSummaries" class="assistant-timeline" aria-live="polite">
+        <div class="assistant-message"><span class="assistant-avatar">AI</span><div class="assistant-bubble">Loading documents saved in your account…</div></div>
       </div>
-      <div class="stat glass">
-        <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg></div>
-        <div class="lbl">Last 7 Days</div>
-        <div class="val" id="s-recent">—</div>
-      </div>
-      <div class="stat glass">
-        <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></div>
-        <div class="lbl">File Types</div>
-        <div class="val" id="s-types">—</div>
-      </div>
-    </div>
-
-    <div class="grid-2">
-      <div class="panel glass">
-        <div class="panel-head">
-          <div><h3>Upload activity</h3><div class="sub">Documents added per day, last 7 days</div></div>
-        </div>
-        <div class="bars" id="bars"></div>
-      </div>
-
-      <div class="panel glass">
-        <div class="panel-head">
-          <div><h3>By file type</h3><div class="sub">Distribution of your documents</div></div>
-        </div>
-        <div id="typeList"><div class="empty" style="padding:24px"><span class="sub">No data yet</span></div></div>
-      </div>
-    </div>
-
-    <div class="panel glass" style="margin-top:15px">
-      <div class="panel-head">
-        <div><h3>Recent documents</h3><div class="sub">Your 5 latest uploads</div></div>
-        <button class="btn btn-ghost btn-sm" data-view="v-docs">View all</button>
-      </div>
-      <div class="tbl-wrap" id="recentWrap"></div>
     </div>
   </section>
 
@@ -226,6 +189,24 @@
 
 <div class="toast" id="toast"></div>
 
+<dialog class="document-dialog" id="documentDialog">
+  <section class="dialog-panel">
+    <div class="dialog-head">
+      <div><h2 id="dialogTitle">Document details</h2><p id="dialogMeta"></p></div>
+      <button class="btn btn-ghost btn-sm" id="dialogClose" type="button">Close</button>
+    </div>
+    <div id="dialogFields" class="document-fields"></div>
+    <div class="document-detail-section">
+      <h3>AI Summary</h3>
+      <p id="dialogSummary">Loading summary…</p>
+    </div>
+    <details class="document-detail-section">
+      <summary>View extracted text for verification</summary>
+      <pre id="dialogExtractedText"></pre>
+    </details>
+  </section>
+</dialog>
+
 <script>
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -281,7 +262,9 @@ function go(view) {
   $('#menu').classList.remove('open');
   window.scrollTo({ top: 0, behavior: 'smooth' });
   if (view === 'v-docs') loadDocs();
-  if (view === 'v-dash') loadDash();
+  if (view === 'v-dash') {
+    loadDash();
+  }
 }
 $$('[data-view]').forEach(b => b.addEventListener('click', () => go(b.dataset.view)));
 
@@ -294,36 +277,145 @@ $('#logoutBtn').onclick = async () => {
   window.location.href = '/login';
 };
 
-/* ---------- dashboard ---------- */
-function renderBars(daily) {
-  const days = [];
-  for (let i = 6; i >= 0; i--) {
-    const d = new Date();
-    d.setDate(d.getDate() - i);
-    const key = d.toISOString().slice(0, 10);
-    days.push({ key, label: d.toLocaleDateString(undefined, { weekday: 'short' }).slice(0, 2), v: daily[key] || 0 });
-  }
-  const max = Math.max(1, ...days.map(d => d.v));
-  $('#bars').innerHTML = days.map(d => `
-    <div class="bar-col">
-      <div class="bar" data-v="${d.v}" style="height:${Math.max(4, (d.v / max) * 100)}%"></div>
-      <div class="d">${d.label}</div>
-    </div>`).join('');
+const SUMMARY_PAGE_SIZE = 100;
+let dashboardSummaryTimer;
+let dashboardSummaryLoadInProgress = false;
+let dashboardSummaryHasPending = false;
+
+async function fetchAllDocuments() {
+    const documents = [];
+    let totalDocuments = 0;
+    do {
+      const response = await api(
+        `/api/documents?limit=${SUMMARY_PAGE_SIZE}&skip=${documents.length}`
+      );
+      documents.push(...(response.documents || []));
+      totalDocuments = response.total_documents ?? documents.length;
+      if (!response.documents?.length) break;
+    } while (documents.length < totalDocuments);
+    return { documents, totalDocuments };
 }
 
-function renderTypes(list) {
-  if (!list.length) {
-    $('#typeList').innerHTML = '<div class="empty" style="padding:24px"><span>No documents yet</span></div>';
-    return;
+function summaryCard(doc) {
+  const details = doc.details || {};
+  const title = doc.title || doc.filename || 'Untitled document';
+  const type = details.document_type && details.document_type !== 'Not available'
+    ? details.document_type
+    : 'document';
+  let summary;
+  if (doc.summary_status === 'completed' && doc.summary) {
+    summary = `${doc.summary_note
+      ? `<p class="assistant-status">${esc(doc.summary_note)}</p>`
+      : ''}<div class="assistant-summary">${formatAssistantSummary(doc.summary)}</div>`;
+  } else if (doc.extraction_status === 'pending' ||
+      ['pending', 'processing', 'generating'].includes(doc.summary_status)) {
+    summary = `<p class="assistant-status"><span class="spin"></span>${
+      doc.extraction_status === 'pending'
+        ? 'Waiting for the saved text extraction to finish…'
+        : 'Generating a summary with local Ollama; unverifiable output will fall back to exact extracted lines…'
+    }</p>`;
+  } else if (doc.summary_status === 'needs_review') {
+    summary = `<p class="assistant-status assistant-review">${
+      esc(doc.summary_review_reason || doc.summary_error || 'The saved text needs review before a reliable summary can be shown.')
+    }</p>`;
+  } else if (doc.summary_status === 'failed') {
+    summary = `<p class="assistant-status assistant-error">${esc(
+      doc.summary_error || 'Temporary summary generation failures remain recorded for recovery.'
+    )}</p>`;
+  } else {
+    summary = `<p class="assistant-status">${
+      doc.extraction_status === 'failed'
+        ? `Text extraction failed${doc.extraction_error ? `: ${esc(doc.extraction_error)}` : '.'}`
+        : doc.extraction_status === 'unsupported'
+          ? 'This file type does not have saved extracted text to summarize.'
+          : 'No extracted text is available for summarization.'
+    }</p>`;
   }
-  const max = Math.max(...list.map(t => t.count));
-  $('#typeList').innerHTML = list.map(t => `
-    <div class="type-row">
-      <span class="t">${esc(t.type)}</span>
-      <span class="meter"><i style="width:${(t.count / max) * 100}%"></i></span>
-      <span class="c">${t.count}</span>
-    </div>`).join('');
+
+  const fields = [
+    ['Name', details.holder_name],
+    ["Father's name", details.father_name],
+    ['Document number', details.document_number !== details.aadhaar_number &&
+      details.document_number !== details.abha_number &&
+      details.document_number !== details.policy_number &&
+      details.document_number !== details.pan_number
+      ? details.document_number : 'Not available'],
+    ['PAN number', details.pan_number],
+    ['Aadhaar number', details.aadhaar_number],
+    ['ABHA number', details.abha_number],
+    ['Policy number', details.policy_number],
+    ['Date of birth', details.date_of_birth],
+    ['Mobile / phone', details.mobile_or_phone],
+    ['Email', details.email],
+    ['Issue date', details.issue_date],
+    ['Coverage', details.coverage],
+    ['Premium', details.premium],
+  ].filter(([, value]) => value && value !== 'Not available');
+  if (details.expiry_date && details.expiry_date !== 'Not available') {
+    fields.push(['Expiry / validity date', details.expiry_date]);
+    fields.push(['Validity status', expiryStatusLabel(details.expiry_status)]);
+    fields.push(['Time remaining', expiryTimeLabel(details)]);
+  } else if (details.expiry_status === 'verification_required') {
+    fields.push(['Validity status', expiryStatusLabel(details.expiry_status)]);
+  }
+  const marksLines = Array.isArray(details.marks_details) ? details.marks_details : [];
+  const fieldMarkup = fields.length || marksLines.length
+    ? `<div class="assistant-facts">${fields.map(([label, value]) =>
+        `<div><span>${esc(label)}</span><b>${esc(value)}</b></div>`
+      ).join('')}${marksLines.length
+        ? `<div class="assistant-marks"><span>Marks / result lines from text</span><ul>${marksLines.map(line => `<li>${esc(line)}</li>`).join('')}</ul></div>`
+        : ''}</div>`
+    : '<p class="assistant-status">No common labeled fields were identified. The summary below is based on readable saved text when available.</p>';
+  const timestamp = doc.uploaded_at ? ` · Uploaded ${fmtDate(doc.uploaded_at)}` : '';
+
+  return `<article class="assistant-message" data-summary-card="${esc(doc.id)}">
+    <span class="assistant-avatar" aria-label="AI assistant">AI</span>
+    <div class="assistant-bubble">
+      <p class="assistant-intro">Here are the details found in your ${esc(type)} document:</p>
+      <h4>${esc(title)}</h4>
+      <p class="assistant-meta">${esc(doc.filename || '')}${esc(timestamp)}</p>
+      ${fieldMarkup}
+      <h5>Summary</h5>
+      ${summary}
+    </div>
+  </article>`;
 }
+
+async function loadDashboardSummaries() {
+    clearTimeout(dashboardSummaryTimer);
+    if (dashboardSummaryLoadInProgress) return;
+    dashboardSummaryLoadInProgress = true;
+    const list = $('#dashboardSummaries');
+    try {
+      const { documents, totalDocuments } = await fetchAllDocuments();
+      $('#summaryCount').textContent = totalDocuments
+        ? `${totalDocuments} saved document${totalDocuments === 1 ? '' : 's'} · summaries are based on saved extracted text`
+        : 'No saved documents';
+      dashboardSummaryHasPending = documents.some(doc =>
+        doc.extraction_status === 'pending' ||
+        ['pending', 'processing', 'generating'].includes(doc.summary_status)
+      );
+      if (!documents.length) {
+        list.innerHTML = `<div class="assistant-message"><span class="assistant-avatar">AI</span><div class="assistant-bubble">No documents are saved in your account yet. After you upload a supported document and its text is extracted, its summary and details will appear here.</div></div>`;
+        return;
+      }
+      list.innerHTML = `<div class="assistant-message assistant-welcome">
+        <span class="assistant-avatar">AI</span>
+        <div class="assistant-bubble">Here are your saved documents. Each message below uses the extracted text stored for that document. Any validity countdown is calculated by the backend only when an expiry date is clearly available.</div>
+      </div>${documents.map(summaryCard).join('')}`;
+    } catch (err) {
+      dashboardSummaryHasPending = false;
+      $('#summaryCount').textContent = 'Could not load document summaries';
+      list.innerHTML = `<div class="empty"><span>${esc(err.message)}</span></div>`;
+    } finally {
+      dashboardSummaryLoadInProgress = false;
+      if (dashboardSummaryHasPending) {
+        dashboardSummaryTimer = setTimeout(loadDashboardSummaries, 3000);
+      }
+    }
+}
+
+$('#refreshSummariesBtn').onclick = loadDashboardSummaries;
 
 function docRows(docs, compact) {
   if (!docs.length) {
@@ -340,12 +432,13 @@ function docRows(docs, compact) {
       <tr>
         <td><div class="doc-cell">
           <span class="ftype">${extOf(d)}</span>
-          <span class="dt"><span class="dn">${esc(d.title)}</span><span class="df">${esc(d.filename)} · Text: ${esc(d.extraction_status || 'pending')}</span></span>
+          <span class="dt"><span class="dn">${esc(d.title)}</span><span class="df">${esc(d.filename)} · Text: ${esc(d.extraction_status || 'pending')} · ${esc(expiryStatusLabel(d.details?.expiry_status))}</span></span>
         </div></td>
         ${compact ? '' : `<td><span class="pill">${esc(d.content_type)}</span></td>`}
         <td>${fmtBytes(d.size)}</td>
         <td><span style="color:var(--muted)">${fmtDate(d.uploaded_at)}</span></td>
         <td><div class="acts">
+          <button class="btn btn-ghost btn-sm" data-doc-details="${esc(d.id)}" type="button">Summary</button>
           <a class="btn btn-ghost btn-sm" href="/api/documents/${d.id}/download">Download</a>
           <button class="btn btn-danger btn-sm" data-del="${d.id}" data-name="${esc(d.title)}">Delete</button>
         </div></td>
@@ -364,20 +457,103 @@ function wire(root) {
     } catch (err) { toast(err.message, 'err'); b.disabled = false; }
   });
   $$('[data-view]', root).forEach(b => b.onclick = () => go(b.dataset.view));
+  $$('[data-doc-details]', root).forEach(b => b.onclick = () => showDocumentDetails(b.dataset.docDetails));
 }
 
-async function loadDash() {
+function expiryStatusLabel(status) {
+  return ({
+    expired: 'Expired',
+    expiring_soon: 'Expiring Soon',
+    valid: 'Valid',
+    unavailable: 'Expiry Date Unavailable',
+    verification_required: 'Verification Required',
+  })[status] || 'Expiry Date Unavailable';
+}
+
+function expiryTimeLabel(details) {
+  if (details.expiry_status === 'expired') return `Expired ${Math.abs(details.days_remaining)} days ago`;
+  if (details.expiry_status === 'expiring_soon') return `${details.days_remaining} days remaining`;
+  if (details.expiry_status === 'valid') return `${details.days_remaining} days remaining`;
+  if (details.expiry_status === 'verification_required') return 'Please verify the extracted expiry date';
+  return 'Expiry date unavailable';
+}
+
+function summaryMessage(doc) {
+  if (doc.summary_status === 'completed' && doc.summary) return doc.summary;
+  if (['processing', 'generating', 'pending'].includes(doc.summary_status)) {
+    if (doc.extraction_status === 'pending') return 'Waiting for text extraction to finish…';
+    return 'The local AI is preparing a source-verified summary…';
+  }
+  if (doc.summary_status === 'needs_review') {
+    return doc.summary_review_reason || doc.summary_error || 'The saved extracted text needs review.';
+  }
+  if (doc.summary_status === 'failed') {
+    return doc.summary_error || 'Summary generation failed after automatic retries.';
+  }
+  return 'No extracted text is available for summarization.';
+}
+
+function formatAssistantSummary(text) {
+  return String(text || '').split(/\r?\n/).map(line => {
+    const value = line.trim();
+    if (!value) return '';
+    if (value.startsWith('## ')) return `<h5>${esc(value.slice(3))}</h5>`;
+    if (value.startsWith('### ')) return `<h6>${esc(value.slice(4))}</h6>`;
+    if (value.startsWith('- ')) {
+      return `<div class="assistant-summary-item"><span aria-hidden="true">•</span><span>${esc(value.slice(2))}</span></div>`;
+    }
+    return `<p>${esc(value)}</p>`;
+  }).join('');
+}
+
+async function showDocumentDetails(docId) {
+  const dialog = $('#documentDialog');
+  $('#dialogTitle').textContent = 'Loading…';
+  $('#dialogMeta').textContent = '';
+  $('#dialogFields').innerHTML = '';
+  $('#dialogSummary').textContent = 'Loading summary…';
+  $('#dialogExtractedText').textContent = '';
+  dialog.showModal();
   try {
-    const [s, d] = await Promise.all([api('/api/stats'), api('/api/documents?limit=5')]);
-    $('#s-total').textContent = s.total_documents;
-    $('#s-size').textContent = fmtBytes(s.total_bytes);
-    $('#s-recent').textContent = s.recent_7_days;
-    $('#s-types').textContent = s.distinct_types;
-    renderBars(s.daily || {});
-    renderTypes(s.by_type || []);
-    $('#recentWrap').innerHTML = docRows(d.documents, true);
-    wire($('#recentWrap'));
-  } catch (err) { toast(err.message, 'err'); }
+    const doc = await api('/api/documents/' + docId);
+    const details = doc.details || {};
+    $('#dialogTitle').textContent = doc.title || doc.filename || 'Document';
+    $('#dialogMeta').textContent = `${doc.filename || ''} · Uploaded ${fmtDate(doc.uploaded_at)}`;
+    const fields = [
+      ['Document type', details.document_type],
+      ['Holder name', details.holder_name],
+      ["Father's name", details.father_name],
+      ['PAN number', details.pan_number],
+      ['Document number', details.document_number],
+      ['Mobile / phone', details.mobile_or_phone],
+      ['Email', details.email],
+      ['Issue date', details.issue_date],
+      ['Expiry date', details.expiry_date],
+      ['Status', expiryStatusLabel(details.expiry_status)],
+      ['Time remaining', expiryTimeLabel(details)],
+    ];
+    $('#dialogFields').innerHTML = fields.map(([label, value]) =>
+      `<div><span>${esc(label)}</span><b>${esc(value || 'Not available')}</b></div>`
+    ).join('');
+    $('#dialogSummary').innerHTML = formatAssistantSummary(summaryMessage(doc));
+    $('#dialogExtractedText').textContent = doc.extracted_text || 'No text was extracted from this document.';
+    if (['pending', 'processing', 'generating'].includes(doc.summary_status)) {
+      setTimeout(() => {
+        if (dialog.open) showDocumentDetails(docId);
+      }, 3000);
+    }
+  } catch (err) {
+    $('#dialogSummary').textContent = err.message;
+  }
+}
+
+$('#dialogClose').onclick = () => $('#documentDialog').close();
+$('#documentDialog').addEventListener('click', event => {
+  if (event.target === $('#documentDialog')) $('#documentDialog').close();
+});
+
+async function loadDash() {
+  await loadDashboardSummaries();
 }
 
 let extractionPollTimer;
@@ -390,7 +566,10 @@ async function loadDocs() {
     $('#docCount').textContent = d.documents.length + (d.documents.length === 1 ? ' document' : ' documents');
     $('#docsWrap').innerHTML = docRows(d.documents, false);
     wire($('#docsWrap'));
-    if (d.documents.some(doc => doc.extraction_status === 'pending')) {
+    if (d.documents.some(doc =>
+      doc.extraction_status === 'pending' ||
+      ['pending', 'processing', 'generating'].includes(doc.summary_status)
+    )) {
       extractionPollTimer = setTimeout(loadDocs, 3000);
     }
   } catch (err) { toast(err.message, 'err'); }
@@ -515,7 +694,6 @@ $('#profForm').onsubmit = async e => {
     $('#navName').textContent = r.user.name;
     $('#menuName').textContent = r.user.name;
     $('#avatar').textContent = (r.user.name[0] || '?').toUpperCase();
-    $('#greetName').textContent = r.user.name.split(' ')[0];
     ['#pf-cur', '#pf-new', '#pf-new2'].forEach(s => $(s).value = '');
   } catch (err) {
     banner(al, err.message, 'err');
