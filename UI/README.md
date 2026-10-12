@@ -57,6 +57,9 @@ the original to GridFS and creates the MongoDB document record before starting
 text extraction in a background task, so slow OCR does not hold the upload
 response open. OCR failures are reported in `extraction_error`; they no longer
 silently appear as successful empty extraction.
+Plain-text `.txt` uploads are decoded as UTF-8 or BOM-marked UTF-16/UTF-32, with
+invalid byte sequences reported as extraction failures instead of corrupted
+text.
 PDF pages without embedded text and supported image uploads use PaddleOCR. Image
 OCR enables PaddleOCR's document-orientation classifier, disables document
 unwarping and text-line orientation, and runs on CPU with OneDNN disabled.

@@ -81,7 +81,7 @@ OLLAMA_URL = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434").rstrip("/")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen3:0.6b")
 OLLAMA_TIMEOUT_SECONDS = int(os.getenv("OLLAMA_TIMEOUT_SECONDS", "180"))
 SUMMARY_MAX_INPUT_CHARS = 30000
-SUMMARY_PROMPT_VERSION = "extractive-details-v6"
+SUMMARY_PROMPT_VERSION = "extractive-details-v7"
 SUMMARY_MAX_ATTEMPTS = 3
 SUMMARY_RETRY_DELAYS = (2, 5)
 SUMMARY_PROCESSING_LEASE_SECONDS = OLLAMA_TIMEOUT_SECONDS + 60
@@ -348,6 +348,27 @@ def _get_file_ext(filename: Optional[str]) -> str:
     if not filename:
         return ""
     return os.path.splitext(filename)[1].lower()
+
+
+def _is_supported_upload_format(
+    filename: Optional[str],
+    content_type: Optional[str],
+) -> bool:
+    ext = _get_file_ext(filename)
+    media_type = (content_type or "").split(";", maxsplit=1)[0].strip().lower()
+    return (
+        ext in {
+            ".pdf", ".docx", ".txt", ".png", ".jpg", ".jpeg",
+            ".bmp", ".tif", ".tiff",
+        }
+        or media_type in {
+            "application/pdf",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "application/docx",
+            "text/plain",
+        }
+        or media_type.startswith("image/")
+    )
 
 
 def _get_ocr_engine():
@@ -1044,13 +1065,37 @@ def _extract_text_from_docx_bytes(data: bytes) -> str:
     return result
 
 
+def _extract_text_from_plain_text_bytes(data: bytes) -> str:
+    if data.startswith((b"\x00\x00\xfe\xff", b"\xff\xfe\x00\x00")):
+        encoding = "utf-32"
+    elif data.startswith((b"\xfe\xff", b"\xff\xfe")):
+        encoding = "utf-16"
+    else:
+        encoding = "utf-8-sig"
+    try:
+        return data.decode(encoding)
+    except UnicodeDecodeError as exc:
+        raise ValueError(
+            "Text file must use UTF-8 or include a UTF-16/UTF-32 byte-order mark."
+        ) from exc
+
+
 def _extract_raw_text_for_upload(filename: Optional[str], file_bytes: bytes, content_type: Optional[str]) -> str:
     print(f"[STEP 7] _extract_raw_text_for_upload called - filename={filename}, size={len(file_bytes)} bytes, content_type={content_type}")
     logger.info("STEP 7: _extract_raw_text_for_upload called - filename=%s, size=%d bytes, content_type=%s", filename, len(file_bytes), content_type)
     ext = _get_file_ext(filename)
     lower_type = (content_type or "").lower()
+    media_type = lower_type.split(";", maxsplit=1)[0].strip()
     print(f"[STEP 7] Detected ext={ext}, lower_type={lower_type}")
     logger.info("STEP 7: Detected ext=%s, lower_type=%s", ext, lower_type)
+
+    if ext == ".txt" or media_type == "text/plain":
+        print("[STEP 7] Format is plain text -> decoding text bytes")
+        logger.info("STEP 7: Format is plain text -> decoding text bytes")
+        result = _extract_text_from_plain_text_bytes(file_bytes)
+        print(f"[STEP 7] Plain-text extraction returned {len(result)} chars")
+        logger.info("STEP 7: Plain-text extraction returned %d chars", len(result))
+        return result
 
     if ext == ".pdf" or lower_type == "application/pdf":
         print("[STEP 7] Format is PDF -> calling PDF extractor")
@@ -1827,16 +1872,8 @@ async def upload(
         metadata={"user_id": str(uid), "content_type": file.content_type},
     )
 
-    ext = _get_file_ext(file.filename)
-    lower_type = (file.content_type or "").lower()
-    supported_format = (
-        ext in {".pdf", ".docx", ".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff"}
-        or lower_type == "application/pdf"
-        or lower_type in {
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            "application/docx",
-        }
-        or lower_type.startswith("image/")
+    supported_format = _is_supported_upload_format(
+        file.filename, file.content_type
     )
 
     logger.info(
@@ -2004,11 +2041,8 @@ async def extract_document_text(doc_id: str, user=Depends(current_user)):
         extraction_error = str(exc)
         logger.exception("Text extraction retry failed for document %s", doc_id)
 
-    ext = _get_file_ext(d.get("filename"))
-    supported_format = (
-        ext in {".pdf", ".docx", ".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff"}
-        or (d.get("content_type") or "").lower() == "application/pdf"
-        or (d.get("content_type") or "").lower().startswith("image/")
+    supported_format = _is_supported_upload_format(
+        d.get("filename"), d.get("content_type")
     )
     extraction_status = (
         "failed" if extraction_error else

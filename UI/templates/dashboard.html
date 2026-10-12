@@ -424,6 +424,7 @@ function summaryCard(doc) {
     ['Issue date', details.issue_date],
     ['Coverage', details.coverage],
     ['Premium', details.premium],
+    ['Blood group', details.blood_group],
   ].filter(([, value]) => value && value !== 'Not available');
   if (details.expiry_date && details.expiry_date !== 'Not available') {
     fields.push(['Expiry / validity date', details.expiry_date]);
