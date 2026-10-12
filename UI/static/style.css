@@ -245,7 +245,12 @@ h1, h2, h3 { margin: 0; letter-spacing: -0.02em; font-weight: 650; }
 }
 .nav button:hover { color: var(--txt); background: rgba(255, 255, 255, 0.05); }
 .nav button.active { color: var(--txt); background: rgba(255, 255, 255, 0.08); }
-@media (max-width: 680px) { .nav button { padding: 8px 10px; font-size: 13.5px; } .brand-sub { display: none; } }
+@media (max-width: 680px) {
+  .topbar { flex-wrap: wrap; }
+  .nav { order: 3; width: 100%; justify-content: space-between; }
+  .nav button { padding: 8px 10px; font-size: 13.5px; }
+  .brand-sub { display: none; }
+}
 
 .avatar-btn {
   display: flex; align-items: center; gap: 9px;
@@ -465,6 +470,14 @@ tbody tr:hover { background: rgba(255, 255, 255, 0.028); }
 /* ---------- assistant-style document summaries ---------- */
 .summary-dashboard { margin-bottom: 15px; }
 .assistant-heading { padding-bottom: 12px; border-bottom: 1px solid var(--stroke); }
+.activity-list { display: grid; }
+.activity-item { display: flex; align-items: flex-start; gap: 13px; padding: 16px 4px; border-bottom: 1px solid var(--stroke); }
+.activity-item:last-child { border-bottom: 0; }
+.activity-marker { flex: 0 0 10px; width: 10px; height: 10px; margin: 5px 0 0 2px; border-radius: 50%; background: var(--brand); box-shadow: 0 0 0 4px rgba(109, 139, 255, 0.14); }
+.activity-content { min-width: 0; }
+.activity-content p { margin: 0 0 5px; overflow-wrap: anywhere; }
+.activity-content time { color: var(--muted); font-size: 12px; }
+.activity-more-wrap { display: flex; justify-content: center; padding-top: 12px; }
 .assistant-timeline { display: grid; gap: 18px; padding: 18px 2px 4px; }
 .assistant-message { display: flex; align-items: flex-start; gap: 11px; min-width: 0; }
 .assistant-avatar {

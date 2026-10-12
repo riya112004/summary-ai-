@@ -13,6 +13,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Optional
+from uuid import uuid4
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 from urllib.request import Request as URLRequest, urlopen
@@ -20,6 +21,7 @@ from urllib.request import Request as URLRequest, urlopen
 from bson import ObjectId
 from bson.errors import InvalidId
 from pymongo import ReturnDocument
+from pymongo.errors import PyMongoError
 from dotenv import load_dotenv
 from fastapi import FastAPI, Depends, HTTPException, Request, UploadFile, File, Form
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
@@ -127,6 +129,12 @@ async def startup():
     bucket = AsyncIOMotorGridFSBucket(db, bucket_name="user_files")
     await db.users.create_index("email", unique=True)
     await db.documents.create_index([("user_id", 1), ("uploaded_at", -1)])
+    await db.activities.create_index([("user_id", 1), ("created_at", -1)])
+    await db.activities.create_index(
+        [("user_id", 1), ("event_key", 1)],
+        unique=True,
+        partialFilterExpression={"event_key": {"$type": "string"}},
+    )
     await db.documents.create_index("extracted_text")
     print("[STARTUP] MongoDB connected and indexes created")
     logger.info("STARTUP: MongoDB connected and indexes created")
@@ -266,6 +274,65 @@ async def current_user(request: Request):
     return user
 
 
+async def _record_activity(
+    user_id: ObjectId,
+    action: str,
+    description: str,
+    *,
+    document_id: Optional[str] = None,
+    event_key: Optional[str] = None,
+    occurred_at: Optional[datetime] = None,
+) -> bool:
+    activity = {
+        "user_id": user_id,
+        "action": action,
+        "description": description,
+        "document_id": document_id,
+        "created_at": occurred_at or datetime.now(timezone.utc),
+        "event_key": event_key or uuid4().hex,
+    }
+    try:
+        await db.activities.update_one(
+            {"user_id": user_id, "event_key": activity["event_key"]},
+            {"$setOnInsert": activity},
+            upsert=True,
+        )
+    except PyMongoError:
+        logger.exception("Could not persist activity event %s", action)
+        return False
+    return True
+
+
+async def _backfill_upload_activities(user_id: ObjectId) -> None:
+    user = await db.users.find_one(
+        {"_id": user_id},
+        {"activity_uploads_backfilled": 1},
+    )
+    if not user or user.get("activity_uploads_backfilled"):
+        return
+
+    all_recorded = True
+    async for doc in db.documents.find(
+        {"user_id": user_id},
+        {"_id": 1, "title": 1, "filename": 1, "uploaded_at": 1},
+    ):
+        title = doc.get("title") or doc.get("filename") or "document"
+        recorded = await _record_activity(
+            user_id,
+            "document_uploaded",
+            f"Uploaded {title}",
+            document_id=str(doc["_id"]),
+            event_key=f"upload:{doc['_id']}",
+            occurred_at=doc.get("uploaded_at"),
+        )
+        all_recorded = all_recorded and recorded
+    if all_recorded:
+        await db.users.update_one(
+            {"_id": user_id},
+            {"$set": {"activity_uploads_backfilled": True}},
+        )
+
+
 def public(user) -> dict:
     created = user.get("created_at")
     return {
@@ -307,7 +374,7 @@ def _get_ocr_engine():
             lang="en",
             text_detection_model_name="PP-OCRv5_mobile_det",
             text_recognition_model_name="PP-OCRv5_mobile_rec",
-            use_doc_orientation_classify=False,
+            use_doc_orientation_classify=True,
             use_doc_unwarping=False,
             use_textline_orientation=False,
             text_det_limit_side_len=960,
@@ -661,6 +728,85 @@ def _read_ocr_text(result) -> str:
     return _read_ocr_result(result)[0]
 
 
+def _estimate_skew_angle(image) -> Optional[float]:
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    edges = cv2.Canny(gray, 50, 150)
+    min_dimension = min(gray.shape[:2])
+    lines = cv2.HoughLinesP(
+        edges,
+        rho=1,
+        theta=np.pi / 180,
+        threshold=50,
+        minLineLength=max(40, round(min_dimension * 0.15)),
+        maxLineGap=max(10, round(min_dimension * 0.03)),
+    )
+    if lines is None:
+        return None
+
+    angles = []
+    for line in lines.reshape(-1, 4):
+        x1, y1, x2, y2 = (int(coordinate) for coordinate in line)
+        angle = np.degrees(np.arctan2(y2 - y1, x2 - x1))
+        angle = (angle + 45) % 90 - 45
+        angles.append(float(angle))
+    if len(angles) < 2:
+        return None
+
+    median_angle = float(np.median(angles))
+    deviation = float(np.median(np.abs(np.asarray(angles) - median_angle)))
+    if 0.5 <= abs(median_angle) <= 12 and deviation <= 2.5:
+        return median_angle
+    return None
+
+
+def _rotate_image(image, angle: float):
+    height, width = image.shape[:2]
+    center = (width / 2, height / 2)
+    matrix = cv2.getRotationMatrix2D(center, angle, 1.0)
+    return cv2.warpAffine(
+        image,
+        matrix,
+        (width, height),
+        flags=cv2.INTER_CUBIC,
+        borderMode=cv2.BORDER_CONSTANT,
+        borderValue=(255, 255, 255),
+    )
+
+
+def _crop_image_whitespace(image):
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    _, foreground = cv2.threshold(
+        gray, 0, 255, cv2.THRESH_BINARY_INV | cv2.THRESH_OTSU
+    )
+    points = cv2.findNonZero(foreground)
+    if points is None:
+        return image
+
+    x, y, width, height = cv2.boundingRect(points)
+    image_height, image_width = gray.shape
+    if width < image_width * 0.55 or height < image_height * 0.55:
+        return image
+    if width >= image_width * 0.98 and height >= image_height * 0.98:
+        return image
+
+    margin_x = max(8, round(image_width * 0.025))
+    margin_y = max(8, round(image_height * 0.025))
+    left = max(0, x - margin_x)
+    top = max(0, y - margin_y)
+    right = min(image_width, x + width + margin_x)
+    bottom = min(image_height, y + height + margin_y)
+    if right - left < image_width or bottom - top < image_height:
+        logger.info(
+            "Cropped blank image margins from %dx%d to %dx%d",
+            image_width,
+            image_height,
+            right - left,
+            bottom - top,
+        )
+        return image[top:bottom, left:right]
+    return image
+
+
 def _preprocess_image_variants(data: bytes) -> list[bytes]:
     print("[STEP 2] Preprocessing image variants for OCR...")
     logger.info("STEP 2: Preprocessing image variants for OCR")
@@ -720,6 +866,12 @@ def _preprocess_image_variants(data: bytes) -> list[bytes]:
         )
         print(f"[STEP 2b] Image resized to {image.shape}")
         logger.info("STEP 2b: Image resized to %s", image.shape)
+
+    skew_angle = _estimate_skew_angle(image)
+    if skew_angle is not None:
+        logger.info("Correcting detected image skew of %.2f degrees", skew_angle)
+        image = _rotate_image(image, skew_angle)
+    image = _crop_image_whitespace(image)
 
     print("[STEP 2c] Converting to grayscale, denoising, enhancing")
     logger.info("STEP 2c: Converting to grayscale, denoising, enhancing")
@@ -1497,6 +1649,7 @@ async def signup(data: SignupIn):
         "created_at": datetime.now(timezone.utc),
     }
     res = await db.users.insert_one(doc)
+    await _record_activity(res.inserted_id, "account_created", "Created an account")
     resp = JSONResponse({"ok": True, "redirect": "/dashboard"})
     set_cookie(resp, make_token(str(res.inserted_id)))
     return resp
@@ -1507,13 +1660,17 @@ async def login(data: LoginIn):
     user = await db.users.find_one({"email": data.email.lower()})
     if not user or not pwd_ctx.verify(data.password, user["password_hash"]):
         raise HTTPException(status_code=401, detail="Invalid email or password")
+    await _record_activity(user["_id"], "login", "Logged in")
     resp = JSONResponse({"ok": True, "redirect": "/dashboard"})
     set_cookie(resp, make_token(str(user["_id"])))
     return resp
 
 
 @app.post("/api/logout")
-async def logout():
+async def logout(request: Request):
+    user = await get_user_optional(request)
+    if user:
+        await _record_activity(user["_id"], "logout", "Logged out")
     resp = JSONResponse({"ok": True, "redirect": "/login"})
     resp.delete_cookie(COOKIE_NAME, path="/")
     return resp
@@ -1546,11 +1703,42 @@ async def update_me(data: ProfileIn, user=Depends(current_user)):
 
     updates["updated_at"] = datetime.now(timezone.utc)
     await db.users.update_one({"_id": user["_id"]}, {"$set": updates})
+    await _record_activity(user["_id"], "profile_updated", "Updated profile details")
     fresh = await db.users.find_one({"_id": user["_id"]})
     return {"ok": True, "user": public(fresh)}
 
 
 # ---------------- stats ----------------
+@app.get("/api/activity")
+async def list_activity(
+    user=Depends(current_user),
+    limit: int = 50,
+    skip: int = 0,
+):
+    await _backfill_upload_activities(user["_id"])
+    query = {"user_id": user["_id"]}
+    page_size = max(1, min(limit, 100))
+    offset = max(0, skip)
+    total_activities = await db.activities.count_documents(query)
+    cursor = (
+        db.activities.find(query, {"_id": 0, "action": 1, "description": 1,
+                                   "document_id": 1, "created_at": 1})
+        .sort("created_at", -1)
+        .skip(offset)
+        .limit(page_size)
+    )
+    activities = []
+    async for activity in cursor:
+        created_at = activity.get("created_at")
+        activities.append({
+            "action": activity["action"],
+            "description": activity["description"],
+            "document_id": activity.get("document_id"),
+            "created_at": created_at.isoformat() if created_at else None,
+        })
+    return {"activities": activities, "total_activities": total_activities}
+
+
 @app.get("/api/stats")
 async def stats(user=Depends(current_user)):
     uid = user["_id"]
@@ -1677,6 +1865,14 @@ async def upload(
         "summary_error": None,
     }
     res = await db.documents.insert_one(doc)
+    await _record_activity(
+        uid,
+        "document_uploaded",
+        f"Uploaded {doc['title']}",
+        document_id=str(res.inserted_id),
+        event_key=f"upload:{res.inserted_id}",
+        occurred_at=doc["uploaded_at"],
+    )
     if supported_format:
         _schedule_extraction(
             asyncio.create_task(
@@ -1764,6 +1960,12 @@ async def retry_document_summary(doc_id: str, user=Depends(current_user)):
         }},
     )
     _schedule_summary(doc["_id"], user["_id"])
+    await _record_activity(
+        user["_id"],
+        "summary_retry",
+        f"Retried summary for {doc.get('title') or doc.get('filename') or 'document'}",
+        document_id=str(doc["_id"]),
+    )
     return {"summary_status": "pending"}
 
 
@@ -1782,6 +1984,12 @@ async def extract_document_text(doc_id: str, user=Depends(current_user)):
             ),
             "extraction_error": d.get("extraction_error"),
         }
+    await _record_activity(
+        user["_id"],
+        "extraction_retry",
+        f"Retried text extraction for {d.get('title') or d.get('filename') or 'document'}",
+        document_id=str(d["_id"]),
+    )
     stream = await bucket.open_download_stream(d["gridfs_id"])
     raw = await stream.read()
 
@@ -1841,6 +2049,12 @@ async def extract_document_text(doc_id: str, user=Depends(current_user)):
 @app.get("/api/documents/{doc_id}/download")
 async def download(doc_id: str, user=Depends(current_user)):
     d = await _owned_doc(doc_id, user)
+    await _record_activity(
+        user["_id"],
+        "document_downloaded",
+        f"Downloaded {d.get('title') or d.get('filename') or 'document'}",
+        document_id=str(d["_id"]),
+    )
     stream = await bucket.open_download_stream(d["gridfs_id"])
 
     async def it():
@@ -1866,6 +2080,12 @@ async def delete_document(doc_id: str, user=Depends(current_user)):
     except Exception:
         pass
     await db.documents.delete_one({"_id": d["_id"], "user_id": user["_id"]})
+    await _record_activity(
+        user["_id"],
+        "document_deleted",
+        f"Deleted {d.get('title') or d.get('filename') or 'document'}",
+        document_id=str(d["_id"]),
+    )
     return {"ok": True}
 
 

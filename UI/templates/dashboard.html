@@ -26,7 +26,8 @@
   </div>
 
   <nav class="nav">
-    <button class="active" data-view="v-dash">AI Assistant</button>
+    <button class="active" data-view="v-activity">Activity</button>
+    <button data-view="v-dash">AI Assistant</button>
     <button data-view="v-upload">Upload</button>
     <button data-view="v-docs">Documents</button>
   </nav>
@@ -59,8 +60,29 @@
 </header>
 
 <main>
+  <!-- ============ ACTIVITY ============ -->
+  <section class="view active" id="v-activity">
+    <div class="page-head">
+      <h2>My Activity</h2>
+      <p>A private timeline of actions in your account.</p>
+    </div>
+
+    <div class="panel glass">
+      <div class="panel-head assistant-heading">
+        <div><h3>Recent activity</h3><div class="sub" id="activityCount">Loading your activity…</div></div>
+        <button class="btn btn-ghost btn-sm" id="refreshActivityBtn" type="button">Refresh</button>
+      </div>
+      <div id="activityList" class="activity-list" aria-live="polite">
+        <div class="empty"><span class="spin" style="margin:0 auto"></span></div>
+      </div>
+      <div class="activity-more-wrap">
+        <button class="btn btn-ghost btn-sm" id="loadMoreActivityBtn" type="button" hidden>Load more</button>
+      </div>
+    </div>
+  </section>
+
   <!-- ============ DASHBOARD ============ -->
-  <section class="view active" id="v-dash">
+  <section class="view" id="v-dash">
     <div class="page-head">
       <h2>AI Document Assistant</h2>
       <p>Your saved documents, details, and summaries in one place.</p>
@@ -262,6 +284,7 @@ function go(view) {
   $('#menu').classList.remove('open');
   window.scrollTo({ top: 0, behavior: 'smooth' });
   if (view === 'v-docs') loadDocs();
+  if (view === 'v-activity') loadActivity();
   if (view === 'v-dash') {
     loadDash();
   }
@@ -295,6 +318,57 @@ async function fetchAllDocuments() {
     } while (documents.length < totalDocuments);
     return { documents, totalDocuments };
 }
+
+const ACTIVITY_PAGE_SIZE = 50;
+let activityOffset = 0;
+let activityLoadInProgress = false;
+
+function activityRow(activity) {
+  return `<article class="activity-item">
+    <span class="activity-marker" aria-hidden="true"></span>
+    <div class="activity-content">
+      <p>${esc(activity.description)}</p>
+      <time datetime="${esc(activity.created_at || '')}">${esc(fmtDate(activity.created_at))}</time>
+    </div>
+  </article>`;
+}
+
+async function loadActivity(reset = true) {
+  if (activityLoadInProgress) return;
+  activityLoadInProgress = true;
+  const list = $('#activityList');
+  if (reset) {
+    activityOffset = 0;
+    list.innerHTML = '<div class="empty"><span class="spin" style="margin:0 auto"></span></div>';
+  }
+  try {
+    const result = await api(
+      `/api/activity?limit=${ACTIVITY_PAGE_SIZE}&skip=${activityOffset}`
+    );
+    const activities = result.activities || [];
+    const html = activities.map(activityRow).join('');
+    if (reset) list.innerHTML = html;
+    else list.insertAdjacentHTML('beforeend', html);
+    activityOffset += activities.length;
+    $('#activityCount').textContent = `${result.total_activities} recorded ${result.total_activities === 1 ? 'activity' : 'activities'}`;
+    $('#loadMoreActivityBtn').hidden = activityOffset >= result.total_activities;
+    if (!activities.length && reset) {
+      list.innerHTML = '<div class="empty"><b>No activity yet</b><span>Your account actions will appear here.</span></div>';
+    }
+  } catch (err) {
+    if (reset) {
+      $('#activityCount').textContent = 'Could not load activity';
+      list.innerHTML = `<div class="empty"><span>${esc(err.message)}</span></div>`;
+    } else {
+      toast(err.message, 'err');
+    }
+  } finally {
+    activityLoadInProgress = false;
+  }
+}
+
+$('#refreshActivityBtn').onclick = () => loadActivity();
+$('#loadMoreActivityBtn').onclick = () => loadActivity(false);
 
 function summaryCard(doc) {
   const details = doc.details || {};
@@ -651,7 +725,7 @@ $('#upForm').onsubmit = async e => {
     fileInput.value = '';
     $('#up-title').value = '';
     $('#picked').classList.remove('show');
-    loadDash();
+    loadActivity();
     loadDocs();
     if (r.extraction_status === 'pending') watchExtraction(r.id, r.title, al);
   } catch (err) {

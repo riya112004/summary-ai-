@@ -28,6 +28,7 @@ Open http://127.0.0.1:8000 → `/login`
 - `/login` — Sign In / Sign Up tabs (name, email, phone, new password, confirm password)
 - `/dashboard` — single-page shell with four views:
   - **AI Assistant** — chat-style, automatically visible summaries and source-backed details for all caller-owned documents
+  - **Activity** — a private, paginated account activity timeline for sign-ins, profile changes, document uploads/downloads/deletions, and extraction/summary retries
   - **Upload** — optional title + drag-and-drop / click-to-browse, 25 MB cap
   - **Documents** — searchable table, download, delete
   - **Profile** (avatar menu) — edit name and phone, change password; **email is locked**
@@ -41,6 +42,7 @@ Open http://127.0.0.1:8000 → `/login`
 | POST | `/api/logout` | Clears cookie |
 | GET | `/api/me` | Current user |
 | PUT | `/api/me` | Update name / phone / password (email immutable) |
+| GET | `/api/activity` | Paginated activity history for the authenticated user |
 | POST | `/api/upload` | multipart `file` + `title` |
 | GET | `/api/documents?q=&limit=&skip=` | Paged caller-owned documents with the matching total count |
 | GET | `/api/documents/{id}` | Caller-owned document metadata and extracted raw text |
@@ -56,9 +58,10 @@ text extraction in a background task, so slow OCR does not hold the upload
 response open. OCR failures are reported in `extraction_error`; they no longer
 silently appear as successful empty extraction.
 PDF pages without embedded text and supported image uploads use PaddleOCR. Image
-OCR disables PaddleOCR's optional document-orientation, unwarping, and text-line
-orientation stages and runs on CPU with OneDNN disabled. OpenCV masks detected
-QR/barcode regions and creates one denoised, contrast-enhanced image variant;
+OCR enables PaddleOCR's document-orientation classifier, disables document
+unwarping and text-line orientation, and runs on CPU with OneDNN disabled.
+OpenCV masks detected QR/barcode regions, corrects small image skew, trims safe
+blank margins, and creates one denoised, contrast-enhanced image variant;
 PaddleOCR uses PP-OCRv5 mobile detection and recognition models with a
 960-pixel detection limit to reduce CPU inference time. OCR detections retain
 their confidence and bounding boxes. Row grouping uses adaptive box heights
