@@ -1,5 +1,6 @@
 """Date-aware summaries for uploaded work plans."""
 
+import hashlib
 import re
 from datetime import date, datetime, timedelta
 from typing import Optional
@@ -147,6 +148,284 @@ def _weekday_themes(text: str) -> dict[str, str]:
         if theme:
             themes[weekday] = theme.group(1).strip()
     return themes
+
+
+def _tabular_date(value: str) -> Optional[date]:
+    value = value.strip()
+    try:
+        return date.fromisoformat(value)
+    except ValueError:
+        pass
+    for fmt in ("%d/%m/%Y", "%d-%m-%Y", "%d %B %Y", "%d %b %Y"):
+        try:
+            return datetime.strptime(value, fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
+def _tabular_time(value: str) -> Optional[int]:
+    match = re.fullmatch(
+        r"\s*(\d{1,2}):(\d{2})\s*(AM|PM)?\s*(?:\(next\s+day\))?\s*",
+        value,
+        re.IGNORECASE,
+    )
+    if not match:
+        return None
+    hour, minute = int(match.group(1)), int(match.group(2))
+    meridiem = (match.group(3) or "").upper()
+    next_day = bool(re.search(r"\(next\s+day\)", value, re.IGNORECASE))
+    if minute > 59:
+        return None
+    if meridiem:
+        if not 1 <= hour <= 12:
+            return None
+        hour = hour % 12 + (12 if meridiem == "PM" else 0)
+    elif hour > 24 or (hour == 24 and minute != 0):
+        return None
+    total = hour * 60 + minute
+    if next_day:
+        total += 24 * 60
+    return total
+
+
+def _tabular_schedule_rows(text: str) -> Optional[list[dict]]:
+    lines = [line for line in text.splitlines() if line.strip()]
+    if len(lines) < 2 or "|" not in lines[0]:
+        return None
+
+    headers = [
+        re.sub(r"[^a-z0-9]+", "_", cell.strip().lower()).strip("_")
+        for cell in lines[0].split("|")
+    ]
+    aliases = {
+        "date": {"date", "schedule_date", "task_date", "event_date"},
+        "activity": {"activity", "title", "task", "event", "meeting"},
+        "start_time": {"start_time", "start", "from_time"},
+        "end_time": {"end_time", "end", "to_time"},
+        "category": {"category", "type", "event_type"},
+        "details": {"details", "description", "notes"},
+        "location": {"location", "where", "venue"},
+        "priority": {"priority", "importance"},
+        "status": {"status", "state"},
+    }
+    columns = {
+        field: next(
+            (headers.index(alias) for alias in names if alias in headers),
+            None,
+        )
+        for field, names in aliases.items()
+    }
+    if columns["date"] is None or columns["activity"] is None:
+        return None
+
+    entries = []
+    for line in lines[1:]:
+        cells = [cell.strip() for cell in line.split("|")]
+        if len(cells) < len(headers):
+            cells.extend([""] * (len(headers) - len(cells)))
+        row = {
+            field: cells[index] if index is not None and index < len(cells) else ""
+            for field, index in columns.items()
+        }
+        row_date = _tabular_date(row["date"])
+        if row_date is None or not row["activity"]:
+            continue
+        category = row["category"]
+        entries.append({
+            "date": row_date.isoformat(),
+            "activity": row["activity"],
+            "category": category,
+            "details": row["details"],
+            "location": row["location"],
+            "priority": row["priority"],
+            "status": row["status"],
+            "start_time": row["start_time"],
+            "end_time": row["end_time"],
+            "start_minute": _tabular_time(row["start_time"]),
+            "end_minute": _tabular_time(row["end_time"]),
+            "is_meeting": bool(re.search(
+                r"\b(meeting|appointment|calendar event)\b",
+                f"{category} {row['activity']}",
+                re.IGNORECASE,
+            )),
+        })
+    return entries
+
+
+def build_tabular_schedule_summary(
+    text: str,
+    *,
+    today: Optional[date] = None,
+) -> Optional[dict]:
+    """Read today's events from extracted pipe-delimited schedule data."""
+    all_entries = _tabular_schedule_rows(text)
+    if all_entries is None:
+        return None
+
+    current_day = today or date.today()
+    observed_dates = [date.fromisoformat(entry["date"]) for entry in all_entries]
+    entries = [
+        entry for entry in all_entries
+        if date.fromisoformat(entry["date"]) == current_day
+    ]
+
+    entries.sort(
+        key=lambda item: (
+            item["start_minute"] is None,
+            item["start_minute"] if item["start_minute"] is not None else 0,
+        )
+    )
+    return {
+        "in_plan_period": bool(
+            observed_dates and min(observed_dates) <= current_day <= max(observed_dates)
+        ),
+        "today": {
+            "date": current_day,
+            "weekday": current_day.strftime("%A"),
+            "type": "scheduled" if entries else "unscheduled",
+            "focus": entries[0]["activity"] if entries else "No activities scheduled.",
+            "routine": None,
+            "due_date": current_day,
+            "expiry_date": current_day,
+        },
+        "entries": entries,
+        "week": None,
+        "month": None,
+        "next_month": None,
+        "quarter": None,
+        "next_quarter": None,
+    }
+
+
+def build_plan_tasks(text: str, plan_id: str) -> list[dict]:
+    """Turn explicit schedule themes and review objectives into stable task records."""
+    schedule_entries = _tabular_schedule_rows(text)
+    if schedule_entries is not None:
+        tasks = []
+        occurrences = {}
+        for entry in schedule_entries:
+            task_date = date.fromisoformat(entry["date"])
+            identity = "\x1f".join((
+                entry["date"],
+                entry["start_time"],
+                entry["end_time"],
+                entry["category"],
+                entry["activity"],
+            ))
+            fingerprint = hashlib.sha256(identity.encode("utf-8")).hexdigest()[:20]
+            occurrence = occurrences.get(fingerprint, 0)
+            occurrences[fingerprint] = occurrence + 1
+            description_parts = [
+                entry["category"],
+                entry["details"],
+                f"Location: {entry['location']}" if entry["location"] else "",
+                (
+                    f"Time: {entry['start_time']}–{entry['end_time']}"
+                    if entry["start_time"] or entry["end_time"]
+                    else ""
+                ),
+                f"Priority: {entry['priority']}" if entry["priority"] else "",
+            ]
+            tasks.append({
+                "source_key": f"{plan_id}:csv:{fingerprint}:{occurrence}",
+                "plan_document_id": plan_id,
+                "task_type": "csv_schedule",
+                "title": entry["activity"],
+                "description": " · ".join(part for part in description_parts if part),
+                "category": entry["category"],
+                "priority": entry["priority"],
+                "start_time": entry["start_time"],
+                "end_time": entry["end_time"],
+                "task_date": task_date.isoformat(),
+                "due_date": task_date.isoformat(),
+                "expiry_date": (task_date + timedelta(days=3)).isoformat(),
+            })
+        return tasks
+
+    period_match = re.search(r"(?im)^Period:\s*(.+)$", text)
+    plan_period = _parse_date_range(period_match.group(1)) if period_match else None
+    if not plan_period:
+        return []
+
+    start, end = plan_period
+    themes = _weekday_themes(text)
+    quarters, months = _parse_sections(text)
+    tasks = []
+    current_day = start
+    while current_day <= end:
+        weekday = current_day.weekday()
+        weekday_name = current_day.strftime("%A")
+        theme = themes.get(weekday_name)
+        if weekday < 5 and theme:
+            due_date = current_day + timedelta(days=4 - weekday)
+            tasks.append({
+                "source_key": f"{plan_id}:day:{current_day.isoformat()}",
+                "plan_document_id": plan_id,
+                "task_type": "daily",
+                "title": f"{weekday_name}: {theme}",
+                "description": theme,
+                "task_date": current_day.isoformat(),
+                "due_date": due_date.isoformat(),
+                "expiry_date": (due_date + timedelta(days=3)).isoformat(),
+            })
+        current_day += timedelta(days=1)
+
+    for month in months:
+        objective = month.get("objective")
+        review_date = month.get("review_date")
+        if objective:
+            due_date = review_date or month["end"]
+            tasks.append({
+                "source_key": f"{plan_id}:month:{month['year']}:{month['month']}:goal",
+                "plan_document_id": plan_id,
+                "task_type": "monthly_goal",
+                "title": f"Month {month['month']} goal: {objective}",
+                "description": objective,
+                "task_date": month["start"].isoformat(),
+                "due_date": due_date.isoformat(),
+                "expiry_date": (due_date + timedelta(days=3)).isoformat(),
+            })
+        if review_date:
+            tasks.append({
+                "source_key": f"{plan_id}:month:{month['year']}:{month['month']}:review",
+                "plan_document_id": plan_id,
+                "task_type": "monthly_review",
+                "title": f"Monthly review: Month {month['month']}",
+                "description": "Review completed tasks, deadlines, quality, estimates, and unresolved issues.",
+                "task_date": review_date.isoformat(),
+                "due_date": review_date.isoformat(),
+                "expiry_date": (review_date + timedelta(days=3)).isoformat(),
+            })
+
+    for quarter in quarters:
+        objective = quarter.get("objective")
+        review_date = quarter.get("review_date")
+        if objective:
+            due_date = review_date or quarter["end"]
+            tasks.append({
+                "source_key": f"{plan_id}:quarter:{quarter['year']}:{quarter['quarter']}:goal",
+                "plan_document_id": plan_id,
+                "task_type": "quarterly_goal",
+                "title": f"Quarter {quarter['quarter']} goal: {objective}",
+                "description": objective,
+                "task_date": quarter["start"].isoformat(),
+                "due_date": due_date.isoformat(),
+                "expiry_date": (due_date + timedelta(days=3)).isoformat(),
+            })
+        if review_date:
+            tasks.append({
+                "source_key": f"{plan_id}:quarter:{quarter['year']}:{quarter['quarter']}:review",
+                "plan_document_id": plan_id,
+                "task_type": "quarterly_review",
+                "title": f"Quarterly review: Q{quarter['quarter']} {quarter['title']}",
+                "description": "Review progress, skills, outcomes, workload, and goals.",
+                "task_date": review_date.isoformat(),
+                "due_date": review_date.isoformat(),
+                "expiry_date": (review_date + timedelta(days=3)).isoformat(),
+            })
+
+    return tasks
 
 
 def build_plan_schedule_summary(

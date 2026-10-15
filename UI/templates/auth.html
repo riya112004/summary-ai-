@@ -1,182 +1,312 @@
-<!DOCTYPE html>
-<html lang="en" data-theme="dark">
+<!doctype html>
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>AI Analysis — Sign in</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/style.css">
+  <meta name="theme-color" content="#eef1f5">
+  <title>Sign in | Workdesk</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #eef1f5;
+      --panel: #fff;
+      --ink: #14213d;
+      --muted: #66738a;
+      --line: #d9dfe8;
+      --brand: #2b4fd8;
+      --brand-dark: #203fb6;
+      --soft: #e3e9fc;
+      --danger: #b42318;
+      --success: #18794e;
+      font-family: "Instrument Sans", "Segoe UI", system-ui, sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      min-height: 100vh;
+      margin: 0;
+      display: grid;
+      place-items: center;
+      padding: 28px;
+      color: var(--ink);
+      background:
+        radial-gradient(ellipse at 12% 14%, rgba(43, 79, 216, .11), transparent 34%),
+        radial-gradient(ellipse at 90% 88%, rgba(31, 122, 77, .08), transparent 30%),
+        var(--bg);
+    }
+
+    button, input { font: inherit; }
+    button { cursor: pointer; }
+    :focus-visible { outline: 3px solid rgba(43, 79, 216, .32); outline-offset: 2px; }
+    .layout {
+      width: min(100%, 980px);
+      min-height: 590px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      overflow: hidden;
+      border: 1px solid rgba(20, 33, 61, .08);
+      border-radius: 18px;
+      background: var(--panel);
+      box-shadow: 0 24px 70px rgba(20, 33, 61, .13);
+    }
+    .intro {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 42px;
+      overflow: hidden;
+      color: #fff;
+      background: #14213d;
+    }
+    .intro::after {
+      position: absolute;
+      right: -110px;
+      bottom: -135px;
+      width: 330px;
+      height: 330px;
+      border: 1px solid rgba(255,255,255,.14);
+      border-radius: 50%;
+      box-shadow: 0 0 0 32px rgba(255,255,255,.035), 0 0 0 68px rgba(255,255,255,.025);
+      content: "";
+    }
+    .brand { display: flex; align-items: center; gap: 11px; font-size: 17px; font-weight: 650; letter-spacing: .01em; }
+    .brand-mark {
+      display: grid;
+      width: 34px;
+      height: 34px;
+      place-items: center;
+      border: 1px solid rgba(255,255,255,.28);
+      border-radius: 10px;
+      color: #fff;
+      background: rgba(255,255,255,.12);
+      font-size: 17px;
+    }
+    .intro-copy { position: relative; z-index: 1; max-width: 370px; margin: 50px 0; }
+    .eyebrow { color: #aebeff; font-size: 12px; font-weight: 700; letter-spacing: .13em; text-transform: uppercase; }
+    .intro h1 { margin: 14px 0; font-size: clamp(32px, 4vw, 46px); line-height: 1.1; letter-spacing: -.04em; }
+    .intro p { max-width: 350px; margin: 0; color: #c9d3e6; font-size: 15px; line-height: 1.7; }
+    .intro-foot { position: relative; z-index: 1; color: #aab6ce; font-size: 12px; }
+
+    .form-side { display: flex; align-items: center; justify-content: center; padding: 48px; }
+    .form-wrap { width: min(100%, 370px); }
+    .mobile-brand { display: none; }
+    .form-wrap h2 { margin: 0; font-size: 27px; letter-spacing: -.025em; }
+    .subtitle { margin: 7px 0 24px; color: var(--muted); font-size: 14px; }
+    .switcher { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-bottom: 24px; padding: 4px; border-radius: 9px; background: #f1f3f7; }
+    .switcher button { min-height: 38px; border: 0; border-radius: 6px; color: var(--muted); background: transparent; font-size: 13px; font-weight: 600; }
+    .switcher button[aria-selected="true"] { color: var(--ink); background: #fff; box-shadow: 0 1px 4px rgba(20,33,61,.12); }
+    .field { margin: 0 0 15px; }
+    .field label { display: block; margin-bottom: 6px; font-size: 13px; font-weight: 600; }
+    .field input {
+      width: 100%;
+      height: 44px;
+      padding: 0 12px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      color: var(--ink);
+      background: #fff;
+      transition: border-color .15s, box-shadow .15s;
+    }
+    .field input::placeholder { color: #9aa5b5; }
+    .field input:focus { border-color: var(--brand); outline: none; box-shadow: 0 0 0 3px rgba(43,79,216,.1); }
+    .submit {
+      width: 100%;
+      min-height: 46px;
+      margin-top: 7px;
+      border: 0;
+      border-radius: 7px;
+      color: #fff;
+      background: var(--brand);
+      font-weight: 650;
+      transition: background .15s, transform .15s;
+    }
+    .submit:hover { background: var(--brand-dark); }
+    .submit:active { transform: translateY(1px); }
+    .submit:disabled { cursor: wait; opacity: .7; }
+    .message { min-height: 21px; margin: 13px 0 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
+    .message.error { color: var(--danger); }
+    .message.success { color: var(--success); }
+    .signed-in { padding: 13px; border: 1px solid #b9e4ce; border-radius: 8px; color: var(--success); background: #effaf4; font-size: 14px; line-height: 1.6; }
+    .hidden { display: none !important; }
+
+    @media (max-width: 700px) {
+      body { padding: 14px; }
+      .layout { display: block; min-height: 0; border-radius: 14px; }
+      .intro { display: none; }
+      .form-side { padding: 34px 25px; }
+      .mobile-brand { display: flex; margin-bottom: 32px; color: var(--ink); }
+      .mobile-brand .brand-mark { border: 0; color: #fff; background: var(--brand); }
+      .form-wrap h2 { font-size: 25px; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+    }
+  </style>
 </head>
 <body>
-<div class="auth-wrap">
+  <main class="layout">
+    <section class="intro" aria-label="About Workdesk">
+      <div class="brand"><span class="brand-mark" aria-hidden="true">W</span> Workdesk</div>
+      <div class="intro-copy">
+        <div class="eyebrow">Your day, in focus</div>
+        <h1>Make room for what matters.</h1>
+        <p>Keep your plans, documents, and daily priorities together in one calm workspace.</p>
+      </div>
+      <div class="intro-foot">A clearer view of your day.</div>
+    </section>
 
-  <section class="auth-hero">
-    <div class="brand" style="margin-bottom:26px">
-      <div class="brand-mark">
-        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M12 2v4M12 18v4M4.9 4.9l2.8 2.8M16.3 16.3l2.8 2.8M2 12h4M18 12h4M4.9 19.1l2.8-2.8M16.3 7.7l2.8-2.8"/>
-          <circle cx="12" cy="12" r="3.2"/>
-        </svg>
-      </div>
-      <div>
-        <div class="brand-name">AI Analysis</div>
-        <div class="brand-sub">Document Intelligence</div>
-      </div>
-    </div>
-
-    <span class="eyebrow"><span class="dot"></span> Secure &amp; private workspace</span>
-    <h1>Your documents,<br><span class="grad">analysed intelligently.</span></h1>
-    <p>Upload anything, keep it organised, and track your workspace at a glance. Every file is scoped to your account only.</p>
-
-    <ul class="feat-list">
-      <li>
-        <span class="feat-ico"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>
-        <span><b>Per-user isolation</b><span>Documents are keyed to your user id — nobody else can read them.</span></span>
-      </li>
-      <li>
-        <span class="feat-ico"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5-5 5 5M12 5v12"/></svg></span>
-        <span><b>Upload anything</b><span>PDFs, sheets, images, archives — stored safely in MongoDB GridFS.</span></span>
-      </li>
-      <li>
-        <span class="feat-ico"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 15l4-5 3 3 5-7"/></svg></span>
-        <span><b>Live dashboard</b><span>Totals, storage used and weekly activity, updated instantly.</span></span>
-      </li>
-    </ul>
-  </section>
-
-  <section class="auth-card glass">
-    <div class="brand">
-      <div class="brand-mark">
-        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M12 2v4M12 18v4M4.9 4.9l2.8 2.8M16.3 16.3l2.8 2.8M2 12h4M18 12h4M4.9 19.1l2.8-2.8M16.3 7.7l2.8-2.8"/>
-          <circle cx="12" cy="12" r="3.2"/>
-        </svg>
-      </div>
-      <div>
-        <div class="brand-name">Welcome back</div>
-        <div class="brand-sub">AI Analysis</div>
-      </div>
-    </div>
-
-    <div class="tabs">
-      <button class="tab active" data-pane="signin" type="button">Sign In</button>
-      <button class="tab" data-pane="signup" type="button">Sign Up</button>
-    </div>
-
-    <div id="alert" class="alert"></div>
-
-    <!-- sign in -->
-    <form class="pane active" id="signin" novalidate>
-      <div class="field">
-        <label for="li-email">Email address</label>
-        <input class="ctrl" id="li-email" type="email" autocomplete="email" placeholder="you@company.com" required>
-      </div>
-      <div class="field">
-        <label for="li-pass">Password</label>
-        <input class="ctrl" id="li-pass" type="password" autocomplete="current-password" placeholder="••••••••" required>
-      </div>
-      <button class="btn btn-primary" type="submit">Sign in</button>
-      <p class="hint">New here? <a href="#" data-goto="signup">Create an account</a></p>
-    </form>
-
-    <!-- sign up -->
-    <form class="pane" id="signup" novalidate>
-      <div class="field">
-        <label for="su-name">Full name</label>
-        <input class="ctrl" id="su-name" type="text" autocomplete="name" placeholder="Aman Kumar" required>
-      </div>
-      <div class="field">
-        <label for="su-email">Email address</label>
-        <input class="ctrl" id="su-email" type="email" autocomplete="email" placeholder="you@company.com" required>
-      </div>
-      <div class="field">
-        <label for="su-phone">Phone number</label>
-        <input class="ctrl" id="su-phone" type="tel" autocomplete="tel" placeholder="+91 98765 43210" required>
-      </div>
-      <div class="row2">
-        <div class="field">
-          <label for="su-pass">New password</label>
-          <input class="ctrl" id="su-pass" type="password" autocomplete="new-password" placeholder="Min 6 characters" required>
+    <section class="form-side">
+      <div class="form-wrap">
+        <div class="brand mobile-brand"><span class="brand-mark" aria-hidden="true">W</span> Workdesk</div>
+        <h2 id="heading">Welcome back</h2>
+        <p class="subtitle" id="subtitle">Sign in to continue to your workspace.</p>
+        <div class="switcher" role="tablist" aria-label="Account access">
+          <button id="loginTab" type="button" role="tab" aria-selected="true">Sign in</button>
+          <button id="signupTab" type="button" role="tab" aria-selected="false">Create account</button>
         </div>
-        <div class="field">
-          <label for="su-pass2">Confirm password</label>
-          <input class="ctrl" id="su-pass2" type="password" autocomplete="new-password" placeholder="Repeat password" required>
-        </div>
+
+        <div id="signedIn" class="signed-in hidden" role="status"></div>
+        <form id="authForm">
+          <div class="field hidden" id="nameField">
+            <label for="name">Full name</label>
+            <input id="name" name="name" autocomplete="name" maxlength="80" placeholder="Your name">
+          </div>
+          <div class="field hidden" id="phoneField">
+            <label for="phone">Phone number</label>
+            <input id="phone" name="phone" type="tel" autocomplete="tel" minlength="6" maxlength="20" placeholder="+91 98765 43210">
+          </div>
+          <div class="field">
+            <label for="email">Email address</label>
+            <input id="email" name="email" type="email" autocomplete="email" required placeholder="you@example.com">
+          </div>
+          <div class="field">
+            <label for="password">Password</label>
+            <input id="password" name="password" type="password" autocomplete="current-password" minlength="6" maxlength="128" required placeholder="At least 6 characters">
+          </div>
+          <div class="field hidden" id="confirmField">
+            <label for="confirmPassword">Confirm password</label>
+            <input id="confirmPassword" name="confirm_password" type="password" autocomplete="new-password" minlength="6" maxlength="128" placeholder="Re-enter your password">
+          </div>
+          <button class="submit" id="submitButton" type="submit">Sign in</button>
+          <p class="message" id="message" role="status" aria-live="polite"></p>
+        </form>
+        <button class="submit hidden" id="logoutButton" type="button">Sign out</button>
       </div>
-      <button class="btn btn-primary" type="submit">Create account</button>
-      <p class="hint">Already registered? <a href="#" data-goto="signin">Sign in instead</a></p>
-    </form>
-  </section>
-</div>
+    </section>
+  </main>
+  <script>
+    (function () {
+      var mode = "login";
+      var form = document.getElementById("authForm");
+      var message = document.getElementById("message");
+      var submitButton = document.getElementById("submitButton");
+      var nameField = document.getElementById("nameField");
+      var phoneField = document.getElementById("phoneField");
+      var confirmField = document.getElementById("confirmField");
+      var nameInput = document.getElementById("name");
+      var phoneInput = document.getElementById("phone");
+      var confirmInput = document.getElementById("confirmPassword");
 
-<script>
-const $ = (s, r = document) => r.querySelector(s);
-const alertBox = $('#alert');
+      function setMessage(text, kind) {
+        message.textContent = text;
+        message.className = "message" + (kind ? " " + kind : "");
+      }
 
-function show(msg, kind = 'err') {
-  alertBox.textContent = msg;
-  alertBox.className = 'alert show ' + kind;
-}
-function clearAlert() { alertBox.className = 'alert'; }
+      function setMode(nextMode) {
+        mode = nextMode;
+        var signingUp = mode === "signup";
+        document.getElementById("heading").textContent = signingUp ? "Create your account" : "Welcome back";
+        document.getElementById("subtitle").textContent = signingUp
+          ? "Add your details to get started."
+          : "Sign in to continue to your workspace.";
+        document.getElementById("loginTab").setAttribute("aria-selected", String(!signingUp));
+        document.getElementById("signupTab").setAttribute("aria-selected", String(signingUp));
+        nameField.classList.toggle("hidden", !signingUp);
+        phoneField.classList.toggle("hidden", !signingUp);
+        confirmField.classList.toggle("hidden", !signingUp);
+        nameInput.required = signingUp;
+        phoneInput.required = signingUp;
+        confirmInput.required = signingUp;
+        document.getElementById("password").autocomplete = signingUp ? "new-password" : "current-password";
+        submitButton.textContent = signingUp ? "Create account" : "Sign in";
+        setMessage("", "");
+      }
 
-function switchTo(name) {
-  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.pane === name));
-  document.querySelectorAll('.pane').forEach(p => p.classList.toggle('active', p.id === name));
-  clearAlert();
-}
-document.querySelectorAll('.tab').forEach(t => t.onclick = () => switchTo(t.dataset.pane));
-document.querySelectorAll('[data-goto]').forEach(a => a.onclick = e => { e.preventDefault(); switchTo(a.dataset.goto); });
+      async function readResponse(response) {
+        var payload = await response.json().catch(function () { return {}; });
+        if (!response.ok) {
+          var detail = payload.detail;
+          if (Array.isArray(detail)) detail = detail.map(function (item) { return item.msg; }).join(" ");
+          throw new Error(detail || "Request failed. Please try again.");
+        }
+        return payload;
+      }
 
-async function post(url, body, btn) {
-  const original = btn.innerHTML;
-  btn.disabled = true;
-  btn.innerHTML = '<span class="spin"></span> Please wait';
-  try {
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      let msg = data.detail || 'Something went wrong';
-      if (Array.isArray(msg)) msg = msg[0]?.msg?.replace(/^Value error, /, '') || 'Invalid input';
-      throw new Error(msg);
-    }
-    show('Success — redirecting…', 'ok');
-    window.location.href = data.redirect || '/dashboard';
-  } catch (err) {
-    show(err.message);
-    btn.disabled = false;
-    btn.innerHTML = original;
-  }
-}
+      document.getElementById("loginTab").addEventListener("click", function () { setMode("login"); });
+      document.getElementById("signupTab").addEventListener("click", function () { setMode("signup"); });
 
-$('#signin').onsubmit = e => {
-  e.preventDefault();
-  clearAlert();
-  const email = $('#li-email').value.trim(), password = $('#li-pass').value;
-  if (!email || !password) return show('Email and password are required');
-  post('/api/login', { email, password }, e.target.querySelector('button[type=submit]'));
-};
+      form.addEventListener("submit", async function (event) {
+        event.preventDefault();
+        if (!form.reportValidity()) return;
+        if (mode === "signup" && document.getElementById("password").value !== confirmInput.value) {
+          setMessage("Passwords do not match.", "error");
+          confirmInput.focus();
+          return;
+        }
 
-$('#signup').onsubmit = e => {
-  e.preventDefault();
-  clearAlert();
-  const body = {
-    name: $('#su-name').value.trim(),
-    email: $('#su-email').value.trim(),
-    phone: $('#su-phone').value.trim(),
-    password: $('#su-pass').value,
-    confirm_password: $('#su-pass2').value,
-  };
-  if (!body.name || !body.email || !body.phone) return show('Please fill in all fields');
-  if (body.password.length < 6) return show('Password must be at least 6 characters');
-  if (body.password !== body.confirm_password) return show('Passwords do not match');
-  post('/api/signup', body, e.target.querySelector('button[type=submit]'));
-};
-</script>
+        var payload = {
+          email: document.getElementById("email").value.trim(),
+          password: document.getElementById("password").value
+        };
+        if (mode === "signup") {
+          payload.name = nameInput.value.trim();
+          payload.phone = phoneInput.value.trim();
+          payload.confirm_password = confirmInput.value;
+        }
+
+        submitButton.disabled = true;
+        submitButton.textContent = mode === "signup" ? "Creating account..." : "Signing in...";
+        setMessage("", "");
+        try {
+          await readResponse(await fetch(mode === "signup" ? "/api/signup" : "/api/login", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "same-origin",
+            body: JSON.stringify(payload)
+          }));
+          window.location.assign("/dashboard");
+        } catch (error) {
+          setMessage(error.message, "error");
+        } finally {
+          submitButton.disabled = false;
+          submitButton.textContent = mode === "signup" ? "Create account" : "Sign in";
+        }
+      });
+
+      async function checkSession() {
+        try {
+          await readResponse(await fetch("/api/me", { credentials: "same-origin" }));
+          window.location.replace("/dashboard");
+        } catch (error) {
+          if (error.message !== "Not authenticated") setMessage(error.message, "error");
+        }
+      }
+
+      document.getElementById("logoutButton").addEventListener("click", async function () {
+        try {
+          await readResponse(await fetch("/api/logout", {
+            method: "POST",
+            credentials: "same-origin"
+          }));
+          window.location.href = "/login";
+        } catch (error) {
+          setMessage(error.message, "error");
+        }
+      });
+
+      checkSession();
+    }());
+  </script>
 </body>
 </html>

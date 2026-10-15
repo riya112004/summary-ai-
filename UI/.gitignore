@@ -3,3 +3,6 @@ __pycache__/
 .env
 venv/
 tests/
+!tests/
+tests/*
+!tests/test_tabular_schedule.py

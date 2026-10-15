@@ -1,4 +1,5 @@
 import asyncio
+import csv
 from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import io
@@ -11,8 +12,8 @@ import sys
 import tempfile
 from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
-from typing import Optional
+from datetime import date, datetime, timedelta, timezone
+from typing import Literal, Optional
 from uuid import uuid4
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
@@ -20,13 +21,11 @@ from urllib.request import Request as URLRequest, urlopen
 
 from bson import ObjectId
 from bson.errors import InvalidId
-from pymongo import ReturnDocument
+from pymongo import ReturnDocument, UpdateOne
 from pymongo.errors import PyMongoError
 from dotenv import load_dotenv
 from fastapi import FastAPI, Depends, HTTPException, Request, UploadFile, File, Form
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
-from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from jose import JWTError, jwt
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorGridFSBucket
 from passlib.context import CryptContext
@@ -39,7 +38,12 @@ from document_intelligence import (
     extract_document_fields,
     validate_extractive_summary,
 )
-from plan_intelligence import build_plan_schedule_summary, serialize_plan_schedule
+from plan_intelligence import (
+    build_tabular_schedule_summary,
+    build_plan_schedule_summary,
+    build_plan_tasks,
+    serialize_plan_schedule,
+)
 
 try:
     import fitz
@@ -88,12 +92,21 @@ SUMMARY_RETRY_DELAYS = (2, 5)
 SUMMARY_PROCESSING_LEASE_SECONDS = OLLAMA_TIMEOUT_SECONDS + 60
 SUMMARY_RECOVERY_INTERVAL_SECONDS = 60
 EXPIRING_SOON_DAYS = 30
+TASK_GENERATION_VERSION = "plan-tasks-v3"
+TASK_STATUSES = (
+    "Pending",
+    "In Progress",
+    "Completed",
+    "Blocked",
+    "Carried Forward",
+    "Skipped",
+)
 
 pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-app = FastAPI(title="AI Analysis")
-app.mount("/static", StaticFiles(directory="static"), name="static")
-templates = Jinja2Templates(directory="templates")
+app = FastAPI(title="AI Analysis API")
+AUTH_PAGE = os.path.join(os.path.dirname(__file__), "templates", "auth.html")
+DASHBOARD_PAGE = os.path.join(os.path.dirname(__file__), "templates", "dashboard.html")
 
 client: Optional[AsyncIOMotorClient] = None
 db = None
@@ -137,6 +150,12 @@ async def startup():
         partialFilterExpression={"event_key": {"$type": "string"}},
     )
     await db.documents.create_index("extracted_text")
+    await db.tasks.create_index(
+        [("user_id", 1), ("source_key", 1)],
+        unique=True,
+        partialFilterExpression={"source_key": {"$type": "string"}},
+    )
+    await db.tasks.create_index([("user_id", 1), ("due_date", 1)])
     print("[STARTUP] MongoDB connected and indexes created")
     logger.info("STARTUP: MongoDB connected and indexes created")
     stale_processing_before = datetime.now(timezone.utc) - timedelta(
@@ -204,6 +223,18 @@ async def shutdown():
         ocr_executor = None
 
 
+@app.get("/", include_in_schema=False)
+@app.get("/login", include_in_schema=False)
+@app.get("/signup", include_in_schema=False)
+async def auth_page():
+    return FileResponse(AUTH_PAGE, media_type="text/html")
+
+
+@app.get("/dashboard", include_in_schema=False)
+async def dashboard_page():
+    return FileResponse(DASHBOARD_PAGE, media_type="text/html")
+
+
 # ---------------- models ----------------
 class SignupIn(BaseModel):
     name: str = Field(min_length=2, max_length=80)
@@ -231,6 +262,39 @@ class ProfileIn(BaseModel):
     current_password: Optional[str] = None
     new_password: Optional[str] = Field(default=None, max_length=128)
     confirm_password: Optional[str] = None
+
+
+class TaskCreateIn(BaseModel):
+    title: str = Field(min_length=1, max_length=180)
+    description: Optional[str] = Field(default=None, max_length=2000)
+    due_date: date
+
+    @field_validator("due_date")
+    @classmethod
+    def due_date_not_in_past(cls, value: date) -> date:
+        if value < date.today():
+            raise ValueError("Task due date cannot be in the past")
+        return value
+
+    @field_validator("title")
+    @classmethod
+    def non_empty_title(cls, value: str) -> str:
+        title = value.strip()
+        if not title:
+            raise ValueError("Task title cannot be blank")
+        return title
+
+
+class TaskStatusIn(BaseModel):
+    status: Literal[
+        "Pending",
+        "In Progress",
+        "Completed",
+        "Blocked",
+        "Carried Forward",
+        "Skipped",
+    ]
+    new_due_date: Optional[date] = None
 
 
 class DocumentTextOut(BaseModel):
@@ -359,7 +423,7 @@ def _is_supported_upload_format(
     media_type = (content_type or "").split(";", maxsplit=1)[0].strip().lower()
     return (
         ext in {
-            ".pdf", ".docx", ".txt", ".png", ".jpg", ".jpeg",
+            ".pdf", ".docx", ".txt", ".csv", ".png", ".jpg", ".jpeg",
             ".bmp", ".tif", ".tiff",
         }
         or media_type in {
@@ -367,6 +431,9 @@ def _is_supported_upload_format(
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             "application/docx",
             "text/plain",
+            "text/csv",
+            "application/csv",
+            "text/comma-separated-values",
         }
         or media_type.startswith("image/")
     )
@@ -1081,6 +1148,15 @@ def _extract_text_from_plain_text_bytes(data: bytes) -> str:
         ) from exc
 
 
+def _extract_text_from_csv_bytes(data: bytes) -> str:
+    decoded = _extract_text_from_plain_text_bytes(data)
+    try:
+        rows = csv.reader(io.StringIO(decoded, newline=""), strict=True)
+        return "\n".join(" | ".join(row) for row in rows)
+    except csv.Error as exc:
+        raise ValueError(f"Could not parse CSV file: {exc}") from exc
+
+
 def _extract_raw_text_for_upload(filename: Optional[str], file_bytes: bytes, content_type: Optional[str]) -> str:
     print(f"[STEP 7] _extract_raw_text_for_upload called - filename={filename}, size={len(file_bytes)} bytes, content_type={content_type}")
     logger.info("STEP 7: _extract_raw_text_for_upload called - filename=%s, size=%d bytes, content_type=%s", filename, len(file_bytes), content_type)
@@ -1096,6 +1172,18 @@ def _extract_raw_text_for_upload(filename: Optional[str], file_bytes: bytes, con
         result = _extract_text_from_plain_text_bytes(file_bytes)
         print(f"[STEP 7] Plain-text extraction returned {len(result)} chars")
         logger.info("STEP 7: Plain-text extraction returned %d chars", len(result))
+        return result
+
+    if ext == ".csv" or media_type in {
+        "text/csv",
+        "application/csv",
+        "text/comma-separated-values",
+    }:
+        print("[STEP 7] Format is CSV -> parsing rows")
+        logger.info("STEP 7: Format is CSV -> parsing rows")
+        result = _extract_text_from_csv_bytes(file_bytes)
+        print(f"[STEP 7] CSV extraction returned {len(result)} chars")
+        logger.info("STEP 7: CSV extraction returned %d chars", len(result))
         return result
 
     if ext == ".pdf" or lower_type == "application/pdf":
@@ -1308,7 +1396,21 @@ def _summarize_with_ollama(extracted_text: str) -> str:
         with urlopen(request, timeout=OLLAMA_TIMEOUT_SECONDS) as response:
             result = json.loads(response.read().decode("utf-8"))
     except HTTPError as exc:
-        raise RuntimeError(f"Local Ollama returned HTTP {exc.code}") from exc
+        try:
+            error_response = json.loads(
+                exc.read(2048).decode("utf-8", errors="replace")
+            )
+        except json.JSONDecodeError:
+            error_response = None
+        error_detail = (
+            error_response.get("error")
+            if isinstance(error_response, dict)
+            else None
+        )
+        message = f"Local Ollama returned HTTP {exc.code}"
+        if isinstance(error_detail, str) and error_detail.strip():
+            message += f": {error_detail.strip()[:500]}"
+        raise RuntimeError(message) from exc
     except URLError as exc:
         raise RuntimeError(
             "Cannot connect to local Ollama. Start Ollama and check OLLAMA_URL."
@@ -1660,28 +1762,6 @@ def _document_response(doc: dict, include_text: bool = False) -> dict:
     return response
 
 
-# ---------------- pages ----------------
-@app.get("/")
-async def root(request: Request):
-    user = await get_user_optional(request)
-    return RedirectResponse("/dashboard" if user else "/login")
-
-
-@app.get("/login", response_class=HTMLResponse)
-async def login_page(request: Request):
-    if await get_user_optional(request):
-        return RedirectResponse("/dashboard")
-    return templates.TemplateResponse("auth.html", {"request": request})
-
-
-@app.get("/dashboard", response_class=HTMLResponse)
-async def dashboard_page(request: Request):
-    user = await get_user_optional(request)
-    if not user:
-        return RedirectResponse("/login")
-    return templates.TemplateResponse("dashboard.html", {"request": request, "user": public(user)})
-
-
 # ---------------- auth api ----------------
 @app.post("/api/signup")
 async def signup(data: SignupIn):
@@ -1696,7 +1776,7 @@ async def signup(data: SignupIn):
     }
     res = await db.users.insert_one(doc)
     await _record_activity(res.inserted_id, "account_created", "Created an account")
-    resp = JSONResponse({"ok": True, "redirect": "/dashboard"})
+    resp = JSONResponse({"ok": True})
     set_cookie(resp, make_token(str(res.inserted_id)))
     return resp
 
@@ -1707,7 +1787,7 @@ async def login(data: LoginIn):
     if not user or not pwd_ctx.verify(data.password, user["password_hash"]):
         raise HTTPException(status_code=401, detail="Invalid email or password")
     await _record_activity(user["_id"], "login", "Logged in")
-    resp = JSONResponse({"ok": True, "redirect": "/dashboard"})
+    resp = JSONResponse({"ok": True})
     set_cookie(resp, make_token(str(user["_id"])))
     return resp
 
@@ -1717,7 +1797,7 @@ async def logout(request: Request):
     user = await get_user_optional(request)
     if user:
         await _record_activity(user["_id"], "logout", "Logged out")
-    resp = JSONResponse({"ok": True, "redirect": "/login"})
+    resp = JSONResponse({"ok": True})
     resp.delete_cookie(COOKIE_NAME, path="/")
     return resp
 
@@ -1806,14 +1886,13 @@ async def dashboard_overview(user=Depends(current_user)):
     }
 
 
-@app.get("/api/dashboard-plan")
-async def dashboard_plan(user=Depends(current_user)):
+async def _active_plan_document_for_user(user_id: ObjectId):
     cursor = (
         db.documents.find(
             {
-                "user_id": user["_id"],
+                "user_id": user_id,
                 "extracted_text": {
-                    "$regex": r"^\s*Period\s*:",
+                    "$regex": r"(?:^\s*Period\s*:|^[^\r\n]*\|[^\r\n]*\|)",
                     "$options": "im",
                 },
             },
@@ -1829,30 +1908,241 @@ async def dashboard_plan(user=Depends(current_user)):
     )
     parsed_plans = []
     async for doc in cursor:
-        schedule = build_plan_schedule_summary(doc.get("extracted_text") or "")
+        text = doc.get("extracted_text") or ""
+        schedule = build_plan_schedule_summary(text)
+        if schedule is None:
+            schedule = build_tabular_schedule_summary(text)
         if schedule:
-            uploaded_at = doc.get("uploaded_at")
-            parsed_plans.append({
-                "document_id": str(doc["_id"]),
-                "title": doc.get("title") or doc.get("filename") or "Work plan",
-                "uploaded_at": uploaded_at.isoformat() if uploaded_at else None,
-                "schedule": schedule,
-            })
+            parsed_plans.append((doc, schedule))
     selected_plan = next(
         (
             plan for plan in parsed_plans
-            if plan["schedule"]["in_plan_period"]
+            if plan[1]["in_plan_period"]
         ),
         parsed_plans[0] if parsed_plans else None,
     )
+    return selected_plan
+
+
+async def _ensure_plan_tasks(plan_doc: dict, user_id: ObjectId):
+    plan_id = str(plan_doc["_id"])
+    text = plan_doc.get("extracted_text") or ""
+    generation_hash = hashlib.sha256(
+        f"{TASK_GENERATION_VERSION}\n{text}".encode("utf-8")
+    ).hexdigest()
+    if plan_doc.get("task_generation_hash") == generation_hash:
+        return
+
+    tasks = build_plan_tasks(text, plan_id)
+    now = datetime.now(timezone.utc)
+    await db.tasks.update_many(
+        {
+            "user_id": user_id,
+            "plan_document_id": plan_id,
+            "source_key": {"$exists": True},
+        },
+        {"$set": {"active": False}},
+    )
+    operations = [
+        UpdateOne(
+            {"user_id": user_id, "source_key": task["source_key"]},
+            {
+                "$set": {
+                    **task,
+                    "active": True,
+                    "updated_at": now,
+                },
+                "$setOnInsert": {
+                    "status": "Pending",
+                    "created_at": now,
+                },
+            },
+            upsert=True,
+        )
+        for task in tasks
+    ]
+    if operations:
+        await db.tasks.bulk_write(operations, ordered=False)
+    await db.documents.update_one(
+        {"_id": plan_doc["_id"], "user_id": user_id},
+        {"$set": {"task_generation_hash": generation_hash}},
+    )
+
+
+def _task_response(task: dict, today: date) -> dict:
+    due_date = date.fromisoformat(task["due_date"])
+    status = task.get("status", "Pending")
+    return {
+        "id": str(task["_id"]),
+        "title": task.get("title") or "Untitled task",
+        "description": task.get("description") or "",
+        "task_type": task.get("task_type", "manual"),
+        "category": task.get("category", ""),
+        "priority": task.get("priority", ""),
+        "start_time": task.get("start_time", ""),
+        "end_time": task.get("end_time", ""),
+        "task_date": task.get("task_date"),
+        "due_date": task["due_date"],
+        "expiry_date": task.get("expiry_date"),
+        "status": status,
+        "is_overdue": (
+            due_date < today and status not in {"Completed", "Skipped"}
+        ),
+        "plan_document_id": task.get("plan_document_id"),
+    }
+
+
+@app.get("/api/dashboard-plan")
+async def dashboard_plan(user=Depends(current_user)):
+    selected_plan = await _active_plan_document_for_user(user["_id"])
     if not selected_plan:
         return {"plan": None}
+    doc, schedule = selected_plan
+    uploaded_at = doc.get("uploaded_at")
     return {
         "plan": {
-            **selected_plan,
-            "schedule": serialize_plan_schedule(selected_plan["schedule"]),
+            "document_id": str(doc["_id"]),
+            "title": doc.get("title") or doc.get("filename") or "Work plan",
+            "uploaded_at": uploaded_at.isoformat() if uploaded_at else None,
+            "schedule": serialize_plan_schedule(schedule),
         }
     }
+
+
+@app.get("/api/tasks")
+async def list_tasks(user=Depends(current_user)):
+    selected_plan = await _active_plan_document_for_user(user["_id"])
+    plan_id = str(selected_plan[0]["_id"]) if selected_plan else None
+    if selected_plan:
+        await _ensure_plan_tasks(selected_plan[0], user["_id"])
+
+    task_scope = {"user_id": user["_id"]}
+    task_scope["$or"] = (
+        [{"task_type": "manual"}]
+        if not plan_id
+        else [{"task_type": "manual"}, {"plan_document_id": plan_id, "active": {"$ne": False}}]
+    )
+    cursor = db.tasks.find(task_scope).sort([("due_date", 1), ("title", 1)])
+    today = date.today()
+    week_start = today - timedelta(days=today.weekday())
+    week_end = week_start + timedelta(days=6)
+    visible_through = today + timedelta(days=30)
+    completed_count = 0
+    planned_count = 0
+    overdue_count = 0
+    week_count = 0
+    week_completed = 0
+    visible_tasks = []
+    async for task in cursor:
+        response = _task_response(task, today)
+        due_date = date.fromisoformat(response["due_date"])
+        status = response["status"]
+        if status != "Skipped":
+            planned_count += 1
+        if status == "Completed":
+            completed_count += 1
+        if response["is_overdue"]:
+            overdue_count += 1
+        if week_start <= due_date <= week_end and status != "Skipped":
+            week_count += 1
+            if status == "Completed":
+                week_completed += 1
+        if (
+            response["is_overdue"]
+            or due_date <= visible_through
+            or response["task_type"] == "manual"
+            or response["task_type"] == "csv_schedule"
+        ):
+            visible_tasks.append(response)
+
+    return {
+        "tasks": visible_tasks,
+        "total_tasks": planned_count,
+        "completed_tasks": completed_count,
+        "overdue_tasks": overdue_count,
+        "completion_percent": (
+            round(completed_count * 100 / planned_count)
+            if planned_count
+            else 0
+        ),
+        "week_tasks": week_count,
+        "week_completed_tasks": week_completed,
+    }
+
+
+@app.post("/api/tasks")
+async def create_task(data: TaskCreateIn, user=Depends(current_user)):
+    now = datetime.now(timezone.utc)
+    task = {
+        "user_id": user["_id"],
+        "task_type": "manual",
+        "title": data.title,
+        "description": (data.description or "").strip(),
+        "task_date": date.today().isoformat(),
+        "due_date": data.due_date.isoformat(),
+        "expiry_date": (data.due_date + timedelta(days=3)).isoformat(),
+        "status": "Pending",
+        "created_at": now,
+        "updated_at": now,
+    }
+    result = await db.tasks.insert_one(task)
+    task["_id"] = result.inserted_id
+    await _record_activity(
+        user["_id"],
+        "task_created",
+        f"Created task: {data.title}",
+    )
+    return {"task": _task_response(task, date.today())}
+
+
+@app.patch("/api/tasks/{task_id}")
+async def update_task_status(
+    task_id: str,
+    data: TaskStatusIn,
+    user=Depends(current_user),
+):
+    try:
+        task_object_id = ObjectId(task_id)
+    except InvalidId as exc:
+        raise HTTPException(status_code=400, detail="Bad task id") from exc
+    task = await db.tasks.find_one({"_id": task_object_id, "user_id": user["_id"]})
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    if data.status == "Carried Forward":
+        if not data.new_due_date or data.new_due_date <= date.today():
+            raise HTTPException(
+                status_code=400,
+                detail="Choose a new due date after today for carried-forward tasks.",
+            )
+    updates = {
+        "status": data.status,
+        "updated_at": datetime.now(timezone.utc),
+    }
+    if data.new_due_date:
+        updates["due_date"] = data.new_due_date.isoformat()
+        updates["expiry_date"] = (
+            data.new_due_date + timedelta(days=3)
+        ).isoformat()
+    if data.status == "Completed":
+        updates["completed_at"] = datetime.now(timezone.utc)
+    else:
+        await db.tasks.update_one(
+            {"_id": task_object_id, "user_id": user["_id"]},
+            {"$unset": {"completed_at": ""}},
+        )
+    await db.tasks.update_one(
+        {"_id": task_object_id, "user_id": user["_id"]},
+        {"$set": updates},
+    )
+    fresh_task = await db.tasks.find_one(
+        {"_id": task_object_id, "user_id": user["_id"]}
+    )
+    await _record_activity(
+        user["_id"],
+        "task_status_changed",
+        f"Updated task status: {fresh_task.get('title', 'Task')} → {data.status}",
+    )
+    return {"task": _task_response(fresh_task, date.today())}
 
 
 @app.get("/api/activity")
@@ -1951,6 +2241,24 @@ async def document_alerts(user=Depends(current_user), limit: int = 50):
     return {
         "alerts": alerts[:max(1, min(limit, 200))],
         "total_documents": total_documents,
+    }
+
+
+@app.get("/api/dashboard-data")
+async def dashboard_data(user=Depends(current_user)):
+    tasks = await list_tasks(user)
+    plan = await dashboard_plan(user)
+    documents = await document_alerts(user, limit=200)
+    schedule = (plan.get("plan") or {}).get("schedule") or {}
+    return {
+        "user": public(user),
+        "tasks": tasks["tasks"],
+        "plan": plan.get("plan"),
+        "meetings": [
+            entry for entry in schedule.get("entries", [])
+            if entry.get("is_meeting")
+        ],
+        "documents": documents["alerts"],
     }
 
 
@@ -2226,6 +2534,4 @@ async def delete_document(doc_id: str, user=Depends(current_user)):
 
 @app.exception_handler(HTTPException)
 async def http_exc(request: Request, exc: HTTPException):
-    if exc.status_code == 401 and not request.url.path.startswith("/api/"):
-        return RedirectResponse("/login")
     return JSONResponse({"detail": exc.detail}, status_code=exc.status_code)

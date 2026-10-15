@@ -1,1079 +1,386 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="dark">
+<html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Dashboard — AI Analysis</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/style.css">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Daily summary</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&display=swap">
+<style>
+:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);
+--bg:#eef1f5;--panel:#fff;--ink:#14213d;--mute:#5d6b82;--line:#d9dfe8;--brand:#2b4fd8;--brandsoft:#e3e9fc;--warn:#c2410c;--warnsoft:#fde9dc;--ok:#1f7a4d;--oksoft:#dff3e8;--side:#14213d;--sidetx:#c9d3e6}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0e1524;--panel:#16203a;--ink:#e8edf7;--mute:#98a6c0;--line:#27345a;--brand:#7c9bff;--brandsoft:#22305e;--warn:#ffa36b;--warnsoft:#44281a;--ok:#5fd199;--oksoft:#16392b;--side:#0a101d;--sidetx:#9fb0cf}}
+:root[data-theme="dark"]{--bg:#0e1524;--panel:#16203a;--ink:#e8edf7;--mute:#98a6c0;--line:#27345a;--brand:#7c9bff;--brandsoft:#22305e;--warn:#ffa36b;--warnsoft:#44281a;--ok:#5fd199;--oksoft:#16392b;--side:#0a101d;--sidetx:#9fb0cf}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*,*::before,*::after{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 "Instrument Sans",system-ui,-apple-system,"Segoe UI",sans-serif;font-variant-numeric:tabular-nums}
+button{font:inherit;color:inherit;cursor:pointer}
+:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
+.app{display:grid;grid-template-columns:220px 1fr;min-height:100vh}
+aside{background:var(--side);color:var(--sidetx);padding:24px 14px;position:sticky;top:0;height:100vh}
+.logo{color:#fff;font-weight:600;font-size:17px;padding:0 10px 20px}
+aside a{display:flex;justify-content:space-between;align-items:center;padding:9px 10px;border-radius:6px;color:inherit;text-decoration:none;margin-bottom:2px}
+aside a.on{background:rgba(255,255,255,.1);color:#fff}
+aside a:hover{background:rgba(255,255,255,.06)}
+aside .n{background:var(--warn);color:#fff;border-radius:10px;font-size:12px;padding:0 7px}
+main{padding:28px 32px 48px;max-width:1280px;width:100%;min-width:0}
+header.top{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap;margin-bottom:20px}
+h1{font-size:28px;line-height:1.2;margin:0;font-weight:600;letter-spacing:-.01em}
+.sub{color:var(--mute);margin:4px 0 0}
+.stats{display:flex;gap:10px;flex-wrap:wrap}
+.header-actions{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.upload-control{display:flex;flex-direction:column;align-items:flex-start;gap:4px}
+.upload-btn{border:1px solid var(--brand);background:var(--brand);color:#fff;border-radius:6px;padding:8px 14px;font-weight:500}
+.upload-btn:hover{filter:brightness(.92)}
+.upload-btn:disabled{opacity:.65;cursor:wait}
+.upload-status{min-height:1em;color:var(--mute);font-size:12px}
+.stat{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px 14px;min-width:116px}
+.stat b{display:block;font-size:22px;line-height:1.2}
+.stat span{font-size:13px;color:var(--mute)}
+.stat.alert b{color:var(--warn)}
+section.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:18px 20px;min-width:0}
+.plan-card{margin-bottom:16px}
+.plan-title{font-weight:600}
+.plan-focus{margin-top:8px;padding:10px 12px;background:var(--brandsoft);border-radius:6px}
+.plan-focus small,.plan-milestones small{color:var(--mute)}
+.plan-focus p,.plan-milestones p{margin:2px 0 0}
+.plan-milestones{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:12px}
+.plan-milestones[hidden]{display:none}
+.plan-milestones:empty{display:none}
+.plan-status{font-size:12px;color:var(--ok)}
+h2{font-size:16px;margin:0;font-weight:600}
+.hd{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;gap:8px}
+.hd small{color:var(--mute);font-size:13px}
+/* timeline */
+.tl{margin-bottom:16px}
+.tl-scroll{overflow-x:auto}
+.tl-track{position:relative;min-width:640px;height:92px;margin-top:6px}
+.tl-hours{position:absolute;inset:0 0 auto 0;height:100%}
+.tl-h{position:absolute;top:0;bottom:0;border-left:1px solid var(--line);font-size:12px;color:var(--mute);padding-left:4px}
+.tl-m{position:absolute;top:26px;height:52px;background:var(--brandsoft);border-left:3px solid var(--brand);border-radius:4px;padding:4px 8px;font-size:13px;line-height:1.3;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.tl-m.l2{top:44px;height:44px}
+.tl-m small{display:block;color:var(--mute)}
+.tl-now{position:absolute;top:18px;bottom:0;width:2px;background:var(--warn)}
+.tl-now::before{content:"Now";position:absolute;top:-18px;left:-14px;font-size:12px;background:var(--warn);color:#fff;border-radius:4px;padding:0 5px}
+.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;align-items:start}
+ul{list-style:none;margin:0;padding:0}
+.tabs{display:flex;gap:4px}
+.tabs button{border:1px solid var(--line);background:none;border-radius:6px;padding:2px 10px;font-size:13px;color:var(--mute)}
+.tabs button[aria-pressed=true]{background:var(--brandsoft);color:var(--brand);border-color:transparent}
+.bar{height:6px;background:var(--line);border-radius:3px;margin-bottom:10px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--ok);width:0;transition:width .25s}
+.task{display:flex;gap:10px;align-items:flex-start;padding:10px 0;border-top:1px solid var(--line)}
+.task input{margin-top:4px;width:16px;height:16px;accent-color:var(--brand)}
+.task label{flex:1;cursor:pointer}
+.task .t{display:block}
+.task.done .t{text-decoration:line-through;color:var(--mute)}
+.meta{font-size:13px;color:var(--mute)}
+.tag{font-size:12px;border-radius:4px;padding:1px 7px;white-space:nowrap}
+.tag.hi{background:var(--warnsoft);color:var(--warn)}
+.tag.md{background:var(--brandsoft);color:var(--brand)}
+.tag.ok{background:var(--oksoft);color:var(--ok)}
+.mt{display:grid;grid-template-columns:62px 1fr auto;gap:10px;padding:10px 0;border-top:1px solid var(--line)}
+.mt.past{opacity:.55}
+.mt .time{font-weight:600}
+.mt .time span{display:block;font-weight:400;font-size:12px;color:var(--mute)}
+.mt .t{font-weight:500}
+.join{border:1px solid var(--brand);color:var(--brand);background:none;border-radius:6px;padding:2px 10px;font-size:13px;align-self:center}
+.join:hover{background:var(--brandsoft)}
+.grp{font-size:13px;font-weight:600;margin:14px 0 2px;color:var(--mute)}
+.grp:first-of-type{margin-top:0}
+.doc{display:flex;gap:10px;justify-content:space-between;align-items:center;padding:10px 0;border-top:1px solid var(--line)}
+.doc .t{font-weight:500}
+.doc.renewed .t{color:var(--mute)}
+.act{border:1px solid var(--line);background:none;border-radius:6px;padding:2px 10px;font-size:13px}
+.act:hover{border-color:var(--brand);color:var(--brand)}
+.empty{color:var(--mute);padding:14px 0;border-top:1px solid var(--line)}
+.error{margin:0 0 12px;color:#b42318;font-size:13px}
+@media (max-width:1060px){.grid{grid-template-columns:1fr}}
+@media (max-width:760px){.app{grid-template-columns:1fr}aside{display:none}main{padding:20px 14px 40px}}
+@media (prefers-reduced-motion:reduce){.bar i{transition:none}}
+</style>
 </head>
 <body>
-
-<header class="topbar">
-  <div class="brand">
-    <div class="brand-mark">
-      <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M12 2v4M12 18v4M4.9 4.9l2.8 2.8M16.3 16.3l2.8 2.8M2 12h4M18 12h4M4.9 19.1l2.8-2.8M16.3 7.7l2.8-2.8"/>
-        <circle cx="12" cy="12" r="3.2"/>
-      </svg>
-    </div>
-    <div>
-      <div class="brand-name">AI Analysis</div>
-      <div class="brand-sub">Document Intelligence</div>
-    </div>
-  </div>
-
-  <nav class="nav">
-    <button class="active" data-view="v-home">Dashboard</button>
-    <button data-view="v-activity">Activity</button>
-    <button data-view="v-dash">AI Assistant</button>
-    <button data-view="v-upload">Upload</button>
-    <button data-view="v-docs">Documents</button>
-  </nav>
-
-  <div class="menu-wrap">
-    <button class="avatar-btn" id="menuBtn">
-      <span class="avatar" id="avatar">{{ user.name[:1]|upper }}</span>
-      <span class="nm" id="navName">{{ user.name }}</span>
-      <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;opacity:.6"><path d="M6 9l6 6 6-6"/></svg>
-    </button>
-    <div class="menu" id="menu">
-      <div class="menu-head">
-        <div class="mn" id="menuName">{{ user.name }}</div>
-        <div class="me">{{ user.email }}</div>
-      </div>
-      <button data-view="v-profile">
-        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1"/></svg>
-        My Profile
-      </button>
-      <button data-view="v-upload">
-        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5-5 5 5M12 5v12"/></svg>
-        Upload Document
-      </button>
-      <button class="danger" id="logoutBtn">
-        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5M21 12H9"/></svg>
-        Log out
-      </button>
-    </div>
-  </div>
-</header>
-
+<div class="app">
+<aside>
+  <div class="logo">Workdesk</div>
+  <a class="on" href="#">Today</a>
+  <a href="#">Tasks <span class="n" id="navTasks">0</span></a>
+  <a href="#">Calendar</a>
+  <a href="#">Documents <span class="n" id="navDocs">0</span></a>
+  <a href="#">Team</a>
+  <a href="#">Settings</a>
+</aside>
 <main>
-  <!-- ============ PERSONAL OVERVIEW ============ -->
-  <section class="view active" id="v-home">
-    <div class="page-head overview-head">
-      <div>
-        <h2>Welcome, {{ user.name }}</h2>
-        <p>Your personal overview of uploaded plans and documents.</p>
-      </div>
-      <button class="btn btn-ghost btn-sm" id="refreshOverviewBtn" type="button">Refresh</button>
+  <header class="top">
+    <div>
+      <h1 id="greet">Good morning</h1>
+      <p class="sub" id="date"></p>
     </div>
-
-    <div class="stats overview-stats" aria-live="polite">
-      <article class="stat glass">
-        <div class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h8"/></svg></div>
-        <div class="lbl">Plans &amp; documents</div>
-        <div class="val" id="overviewTotal">—</div>
-      </article>
-      <article class="stat glass">
-        <div class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/><path d="M22 12a10 10 0 1 1-5.8-9.1"/></svg></div>
-        <div class="lbl">Text extracted</div>
-        <div class="val" id="overviewExtracted">—</div>
-      </article>
-      <article class="stat glass">
-        <div class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg></div>
-        <div class="lbl">Processing</div>
-        <div class="val" id="overviewProcessing">—</div>
-      </article>
-    </div>
-
-    <div class="panel glass plan-panel">
-      <div class="panel-head assistant-heading">
-        <div><h3 id="planHeading">Your date-based plan</h3><div class="sub" id="planCaption">Looking for an uploaded schedule…</div></div>
-        <button class="btn btn-ghost btn-sm" id="refreshPlanBtn" type="button">Refresh plan</button>
+    <div class="header-actions">
+      <div class="stats">
+        <div class="stat"><b id="sTasks">0</b><span>tasks open</span></div>
+        <div class="stat"><b id="sMeet">0</b><span>meetings left</span></div>
+        <div class="stat alert"><b id="sDocs">0</b><span>documents expire today</span></div>
       </div>
-      <div id="planSummary" class="plan-summary" aria-live="polite">
-        <div class="empty"><span class="spin" style="margin:0 auto"></span></div>
+      <div class="upload-control">
+        <button class="upload-btn" id="uploadButton" type="button">Upload document</button>
+        <input id="uploadFile" type="file" accept=".pdf,.docx,.txt,.csv,.png,.jpg,.jpeg,.bmp,.tif,.tiff" hidden>
+        <small class="upload-status" id="uploadStatus" role="status" aria-live="polite"></small>
       </div>
     </div>
+  </header>
+  <p class="error" id="pageError" role="status" aria-live="polite"></p>
 
-    <div class="panel glass overview-panel">
-      <div class="panel-head assistant-heading">
-        <div><h3>Your plans &amp; documents</h3><div class="sub" id="overviewCaption">Loading your latest uploads…</div></div>
-        <button class="btn btn-primary btn-sm" style="width:auto" data-view="v-upload" type="button">+ Upload</button>
-      </div>
-      <div id="recentDocuments" class="overview-documents" aria-live="polite">
-        <div class="empty"><span class="spin" style="margin:0 auto"></span></div>
-      </div>
-      <div class="overview-actions">
-        <button class="btn btn-ghost btn-sm" type="button" data-view="v-docs">View all documents</button>
-        <button class="btn btn-ghost btn-sm" type="button" data-view="v-activity">View activity history</button>
-      </div>
+  <section class="card tl" aria-label="Today's schedule">
+    <div class="hd"><h2>Your day</h2><small id="tlNote"></small></div>
+    <div class="tl-scroll"><div class="tl-track" id="track"></div></div>
+  </section>
+
+  <section class="card plan-card" id="planCard" aria-labelledby="planHeading" hidden>
+    <div class="hd"><h2 id="planHeading">Work plan</h2><div><small id="planPeriod"></small> <small class="plan-status" id="planStatus"></small></div></div>
+    <div class="plan-title" id="planTitle"></div>
+    <div class="plan-focus"><small>Today's focus</small><p id="planFocus"></p><p class="meta" id="planRoutine"></p></div>
+    <div class="plan-milestones" id="planMilestones">
+      <div><small id="planMonthLabel">Monthly focus</small><p id="planMonth"></p></div>
+      <div><small id="planQuarterLabel">Quarterly focus</small><p id="planQuarter"></p></div>
     </div>
   </section>
 
-  <!-- ============ ACTIVITY HISTORY ============ -->
-  <section class="view" id="v-activity">
-    <div class="page-head">
-      <h2>Activity history</h2>
-      <p>A private timeline of actions in your account.</p>
-    </div>
-
-    <div class="panel glass">
-      <div class="panel-head assistant-heading">
-        <div><h3>Recent activity</h3><div class="sub" id="activityCount">Loading your activity…</div></div>
-        <button class="btn btn-ghost btn-sm" id="refreshActivityBtn" type="button">Refresh</button>
+  <div class="grid">
+    <section class="card" aria-labelledby="hTasks">
+      <div class="hd"><h2 id="hTasks">Tasks due today</h2>
+        <div class="tabs"><button aria-pressed="true" data-f="all">All</button><button aria-pressed="false" data-f="open">Open</button></div>
       </div>
-      <div id="activityList" class="activity-list" aria-live="polite">
-        <div class="empty"><span class="spin" style="margin:0 auto"></span></div>
-      </div>
-      <div class="activity-more-wrap">
-        <button class="btn btn-ghost btn-sm" id="loadMoreActivityBtn" type="button" hidden>Load more</button>
-      </div>
-    </div>
-  </section>
+      <div class="bar" role="progressbar" aria-label="Tasks completed"><i id="prog"></i></div>
+      <ul id="tasks"></ul>
+    </section>
 
-  <!-- ============ DASHBOARD ============ -->
-  <section class="view" id="v-dash">
-    <div class="page-head">
-      <h2>AI Document Assistant</h2>
-      <p>Your saved documents, details, and summaries in one place.</p>
-    </div>
+    <section class="card" aria-labelledby="hMeet">
+      <div class="hd"><h2 id="hMeet">Meetings</h2><small id="meetCount"></small></div>
+      <ul id="meets"></ul>
+    </section>
 
-    <div class="panel glass summary-dashboard">
-      <div class="panel-head assistant-heading">
-        <div><h3>AI Document Assistant</h3><div class="sub" id="summaryCount">Loading your documents…</div></div>
-        <button class="btn btn-ghost btn-sm" id="refreshSummariesBtn" type="button">Refresh</button>
-      </div>
-      <div id="dashboardSummaries" class="assistant-timeline" aria-live="polite">
-        <div class="assistant-message"><span class="assistant-avatar">AI</span><div class="assistant-bubble">Loading documents saved in your account…</div></div>
-      </div>
-    </div>
-  </section>
-
-  <!-- ============ UPLOAD ============ -->
-  <section class="view" id="v-upload">
-    <div class="page-head">
-      <h2>Upload</h2>
-      <p>Anything you upload is saved against your account id — only you can see or download it.</p>
-    </div>
-
-    <div class="panel glass form-narrow">
-      <form id="upForm">
-        <div class="field">
-          <label for="up-title">Document name <span style="font-weight:400">(optional)</span></label>
-          <input class="ctrl" id="up-title" type="text" placeholder="e.g. Q3 Revenue Report">
-        </div>
-
-        <div class="drop" id="drop">
-          <div class="di">
-            <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5-5 5 5M12 5v12"/></svg>
-          </div>
-          <b>Click to browse or drop a file here</b>
-          <span>Any file type · up to 25 MB</span>
-          <input type="file" id="file" hidden>
-        </div>
-
-        <div class="picked" id="picked">
-          <span class="ftype" id="pickedType">FILE</span>
-          <span class="pn"><span id="pickedName"></span><br><span class="ps" id="pickedSize"></span></span>
-          <button class="btn btn-ghost btn-sm" type="button" id="clearPick">Remove</button>
-        </div>
-
-        <div id="upAlert" class="alert" style="margin-top:14px"></div>
-        <button class="btn btn-primary" type="submit" style="margin-top:6px">Upload to my workspace</button>
-      </form>
-    </div>
-  </section>
-
-  <!-- ============ DOCUMENTS ============ -->
-  <section class="view" id="v-docs">
-    <div class="page-head">
-      <h2>My Documents</h2>
-      <p>Everything you have uploaded, newest first.</p>
-    </div>
-
-    <div class="panel glass">
-      <div class="panel-head">
-        <div><h3>All documents</h3><div class="sub" id="docCount">—</div></div>
-        <div style="display:flex;gap:9px;flex-wrap:wrap">
-          <div class="search-box">
-            <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
-            <input class="ctrl" id="search" type="search" placeholder="Search documents…">
-          </div>
-          <button class="btn btn-primary btn-sm" style="width:auto" data-view="v-upload">+ Upload</button>
-        </div>
-      </div>
-      <div class="tbl-wrap" id="docsWrap"></div>
-    </div>
-  </section>
-
-  <!-- ============ PROFILE ============ -->
-  <section class="view" id="v-profile">
-    <div class="page-head">
-      <h2>My Profile</h2>
-      <p>Update your details. Your email address is permanent and cannot be changed.</p>
-    </div>
-
-    <div class="panel glass form-narrow">
-      <h3 style="font-size:15px;margin-bottom:14px">Account details</h3>
-      <div id="profAlert" class="alert"></div>
-
-      <form id="profForm">
-        <div class="field">
-          <label for="pf-name">Full name</label>
-          <input class="ctrl" id="pf-name" type="text" value="{{ user.name }}" required>
-        </div>
-        <div class="field">
-          <label for="pf-email">Email address</label>
-          <div class="locked">
-            <input class="ctrl" id="pf-email" type="email" value="{{ user.email }}" disabled>
-            <span class="tag">Locked</span>
-          </div>
-        </div>
-        <div class="field">
-          <label for="pf-phone">Phone number</label>
-          <input class="ctrl" id="pf-phone" type="tel" value="{{ user.phone }}" required>
-        </div>
-
-        <div class="divider"></div>
-        <h3 style="font-size:15px;margin-bottom:6px">Change password</h3>
-        <p class="sub" style="color:var(--muted);font-size:12.5px;margin:0 0 14px">Leave these blank to keep your current password.</p>
-
-        <div class="field">
-          <label for="pf-cur">Current password</label>
-          <input class="ctrl" id="pf-cur" type="password" autocomplete="current-password" placeholder="••••••••">
-        </div>
-        <div class="row2">
-          <div class="field">
-            <label for="pf-new">New password</label>
-            <input class="ctrl" id="pf-new" type="password" autocomplete="new-password" placeholder="Min 6 characters">
-          </div>
-          <div class="field">
-            <label for="pf-new2">Confirm new password</label>
-            <input class="ctrl" id="pf-new2" type="password" autocomplete="new-password" placeholder="Repeat password">
-          </div>
-        </div>
-
-        <button class="btn btn-primary" type="submit" style="margin-top:6px">Save changes</button>
-      </form>
-    </div>
-  </section>
+    <section class="card" aria-labelledby="hDocs">
+      <div class="hd"><h2 id="hDocs">Documents expiring</h2><small>Next 5 days</small></div>
+      <div id="docs"></div>
+    </section>
+  </div>
 </main>
-
-<div class="toast" id="toast"></div>
-
-<dialog class="document-dialog" id="documentDialog">
-  <section class="dialog-panel">
-    <div class="dialog-head">
-      <div><h2 id="dialogTitle">Document details</h2><p id="dialogMeta"></p></div>
-      <button class="btn btn-ghost btn-sm" id="dialogClose" type="button">Close</button>
-    </div>
-    <div id="dialogFields" class="document-fields"></div>
-    <div class="document-detail-section">
-      <h3>AI Summary</h3>
-      <p id="dialogSummary">Loading summary…</p>
-    </div>
-    <details class="document-detail-section">
-      <summary>View extracted text for verification</summary>
-      <pre id="dialogExtractedText"></pre>
-    </details>
-  </section>
-</dialog>
+</div>
 
 <script>
-const $ = (s, r = document) => r.querySelector(s);
-const $$ = (s, r = document) => [...r.querySelectorAll(s)];
-
-/* ---------- helpers ---------- */
-function fmtBytes(b) {
-  if (!b) return '0 B';
-  const u = ['B', 'KB', 'MB', 'GB'];
-  const i = Math.min(Math.floor(Math.log(b) / Math.log(1024)), 3);
-  return (b / Math.pow(1024, i)).toFixed(i ? 1 : 0) + ' ' + u[i];
-}
-function fmtDate(iso) {
-  if (!iso) return '—';
-  return new Date(iso).toLocaleString(undefined, { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-}
-function extOf(d) {
-  const m = (d.filename || '').match(/\.([a-z0-9]{1,5})$/i);
-  return m ? m[1].toUpperCase().slice(0, 4) : 'FILE';
-}
-function esc(s) {
-  return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-}
-
-let toastTimer;
-function toast(msg, kind = 'ok') {
-  const t = $('#toast');
-  t.textContent = msg;
-  t.className = 'toast show ' + kind;
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => t.className = 'toast ' + kind, 3200);
-}
-function banner(el, msg, kind) {
-  el.textContent = msg;
-  el.className = 'alert show ' + kind;
-}
-
-async function api(url, opts = {}) {
-  const res = await fetch(url, opts);
-  if (res.status === 401) { window.location.href = '/login'; throw new Error('Session expired'); }
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    let msg = data.detail || 'Request failed';
-    if (Array.isArray(msg)) msg = msg[0]?.msg?.replace(/^Value error, /, '') || 'Invalid input';
-    throw new Error(msg);
-  }
-  return data;
-}
-
-/* ---------- navigation ---------- */
-function go(view) {
-  $$('.view').forEach(v => v.classList.toggle('active', v.id === view));
-  $$('.nav button').forEach(b => b.classList.toggle('active', b.dataset.view === view));
-  $('#menu').classList.remove('open');
-  if (view !== 'v-home') clearTimeout(overviewTimer);
-  window.scrollTo({ top: 0, behavior: 'smooth' });
-  if (view === 'v-home') loadDashboardOverview();
-  if (view === 'v-docs') loadDocs();
-  if (view === 'v-activity') loadActivity();
-  if (view === 'v-dash') {
-    loadDash();
-  }
-}
-$$('[data-view]').forEach(b => b.addEventListener('click', () => go(b.dataset.view)));
-
-$('#menuBtn').onclick = e => { e.stopPropagation(); $('#menu').classList.toggle('open'); };
-document.addEventListener('click', e => {
-  if (!e.target.closest('.menu-wrap')) $('#menu').classList.remove('open');
-});
-$('#logoutBtn').onclick = async () => {
-  await fetch('/api/logout', { method: 'POST' });
-  window.location.href = '/login';
+var DATA = {
+  user: "",
+  tasks: [],
+  meetings: [],
+  docs: [],
+  plan: null
 };
 
-const SUMMARY_PAGE_SIZE = 100;
-let dashboardSummaryTimer;
-let dashboardSummaryLoadInProgress = false;
-let dashboardSummaryHasPending = false;
+var $ = function(id){return document.getElementById(id)};
+var now = new Date(), nowH = now.getHours() + now.getMinutes()/60;
+var filter = "all";
+function esc(s){return String(s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]})}
+function fmt(h){var hh=Math.floor(h),mm=Math.round((h-hh)*60),ap=hh>=12?"PM":"AM";hh=hh%12||12;return hh+":"+(mm<10?"0":"")+mm+" "+ap}
+function fmtTime(s){var p=s.split(":");return fmt(+p[0]+ +p[1]/60)}
+function dayLabel(n){var d=new Date();d.setDate(d.getDate()+n);return d.toLocaleDateString("en-IN",{weekday:"short",day:"numeric",month:"short"})}
+function localDate(){return now.getFullYear()+"-"+String(now.getMonth()+1).padStart(2,"0")+"-"+String(now.getDate()).padStart(2,"0")}
+function dateLabel(value){var d=new Date(value+"T00:00:00");return Number.isNaN(d.getTime())?value:d.toLocaleDateString("en-IN",{weekday:"short",day:"numeric",month:"short"})}
+function minuteHour(value){return typeof value==="number"?value/60:null}
+function taskTime(value){return /^\d{1,2}:\d{2}\s*(AM|PM)$/i.test(value)?value:/^\d{1,2}:\d{2}$/.test(value)?fmtTime(value):dateLabel(value)}
 
-async function fetchAllDocuments() {
-    const documents = [];
-    let totalDocuments = 0;
-    do {
-      const response = await api(
-        `/api/documents?limit=${SUMMARY_PAGE_SIZE}&skip=${documents.length}`
-      );
-      documents.push(...(response.documents || []));
-      totalDocuments = response.total_documents ?? documents.length;
-      if (!response.documents?.length) break;
-    } while (documents.length < totalDocuments);
-    return { documents, totalDocuments };
-}
-
-let overviewTimer;
-let overviewLoadInProgress = false;
-let overviewHasProcessing = false;
-
-function overviewStatus(status, kind) {
-  const labels = kind === 'extraction'
-    ? {
-        completed: 'Text extracted',
-        pending: 'Extracting',
-        processing: 'Extracting',
-        no_text: 'No text found',
-        unsupported: 'Unsupported file',
-        failed: 'Extraction failed',
-      }
-    : {
-        completed: 'Summary ready',
-        pending: 'Summary pending',
-        processing: 'Creating summary',
-        generating: 'Creating summary',
-        needs_review: 'Needs review',
-        failed: 'Summary failed',
-        unavailable: 'No summary',
-      };
-  return labels[status] || 'Status unavailable';
-}
-
-function overviewDocumentRow(doc) {
-  const retryTextExtraction = (
-    (doc.filename || '').toLowerCase().endsWith('.txt') ||
-    (doc.content_type || '').toLowerCase().startsWith('text/plain')
-  ) && doc.extraction_status !== 'completed';
-  return `<article class="overview-document">
-    <span class="ftype">${esc(extOf(doc))}</span>
-    <div class="overview-document-info">
-      <b>${esc(doc.title || doc.filename || 'Untitled document')}</b>
-      <span>${esc(doc.filename || '')} · Uploaded ${esc(fmtDate(doc.uploaded_at))}</span>
-    </div>
-    <div class="overview-document-status">
-      <span class="pill">${esc(overviewStatus(doc.extraction_status, 'extraction'))}</span>
-      <span class="pill">${esc(overviewStatus(doc.summary_status, 'summary'))}</span>
-    </div>
-    <div class="overview-document-actions">
-      ${retryTextExtraction
-        ? `<button class="btn btn-ghost btn-sm" type="button" data-extract="${esc(doc.id)}">Extract plan</button>`
-        : ''}
-      <button class="btn btn-ghost btn-sm" type="button" data-doc-details="${esc(doc.id)}">Details</button>
-    </div>
-  </article>`;
-}
-
-function formatPlanDate(iso) {
-  if (!iso) return 'Date not specified';
-  const value = new Date(`${iso}T00:00:00`);
-  return Number.isNaN(value.getTime())
-    ? 'Date not specified'
-    : value.toLocaleDateString(undefined, {
-        day: 'numeric',
-        month: 'long',
-        year: 'numeric',
-      });
-}
-
-function planReviewLine(label, reviewDate) {
-  return reviewDate
-    ? `<p class="plan-review"><b>${esc(label)}:</b> ${esc(formatPlanDate(reviewDate))}</p>`
-    : '';
-}
-
-function renderPlanSummary(plan) {
-  const summary = $('#planSummary');
-  if (!plan) {
-    $('#planHeading').textContent = 'Your date-based plan';
-    $('#planCaption').textContent = 'No structured schedule detected in your uploaded documents.';
-    summary.innerHTML = `<div class="empty">
-      <b>No date-based plan found</b>
-      <span>Upload a plan with a date range and daily, monthly, or quarterly sections to see a schedule here.</span>
-    </div>`;
-    return;
-  }
-
-  const schedule = plan.schedule;
-  const today = schedule.today;
-  $('#planHeading').textContent = schedule.in_plan_period
-    ? `Plan for ${formatPlanDate(today.date)}`
-    : 'Your date-based plan';
-  $('#planCaption').textContent = `${plan.title} · Plan period ${formatPlanDate(schedule.plan_start)} – ${formatPlanDate(schedule.plan_end)}`;
-
-  if (!schedule.in_plan_period) {
-    summary.innerHTML = `<div class="plan-notice">
-      This plan does not cover today (${esc(formatPlanDate(today.date))}). Its period is ${esc(formatPlanDate(schedule.plan_start))} to ${esc(formatPlanDate(schedule.plan_end))}.
-    </div>`;
-    return;
-  }
-
-  const dailyContent = today.type === 'workday'
-    ? `<p>${esc(today.focus)}</p>
-       ${today.routine ? `<details class="plan-routine"><summary>View today's routine</summary><p>${esc(today.routine)}</p></details>` : ''}
-       <p class="plan-review"><b>Weekly deliverable due:</b> ${esc(formatPlanDate(today.due_date))} · <b>Task expiry:</b> ${esc(formatPlanDate(today.expiry_date))}</p>`
-    : `<p>${esc(today.focus)}</p>
-       <p class="plan-review"><b>Task expiry:</b> ${esc(formatPlanDate(today.expiry_date))}</p>`;
-  const weeklyDays = (schedule.week?.days || []).map(item =>
-    `<li><b>${esc(item.day)}:</b> ${esc(item.focus)}</li>`
-  ).join('');
-  const month = schedule.month || schedule.next_month;
-  const quarter = schedule.quarter || schedule.next_quarter;
-  const monthTitle = schedule.month ? `This plan month · Month ${month.number}` : `Next plan month · Month ${month?.number ?? ''}`;
-  const quarterTitle = schedule.quarter
-    ? `This quarter · Q${quarter.number} ${quarter.title}`
-    : quarter ? `Next quarter · Q${quarter.number} ${quarter.title}` : 'Quarterly milestone';
-
-  summary.innerHTML = `<div class="plan-grid">
-    <article class="plan-card plan-card-today">
-      <span class="plan-kicker">TODAY · ${esc(today.weekday)}</span>
-      <h4>Today's focus</h4>
-      ${dailyContent}
-    </article>
-    <article class="plan-card">
-      <span class="plan-kicker">THIS WEEK · ${esc(formatPlanDate(schedule.week.start))} – ${esc(formatPlanDate(schedule.week.end))}</span>
-      <h4>Weekly activities</h4>
-      <ul class="plan-weekdays">${weeklyDays}
-        <li><b>Saturday:</b> ${esc(schedule.week.saturday)}</li>
-        <li><b>Sunday:</b> ${esc(schedule.week.sunday)}</li>
-      </ul>
-      <p class="plan-review"><b>Deliverable due:</b> ${esc(formatPlanDate(schedule.week.deliverable_due))} · <b>Expires:</b> ${esc(formatPlanDate(schedule.week.task_expiry))}</p>
-    </article>
-    ${month ? `<article class="plan-card">
-      <span class="plan-kicker">${esc(monthTitle)} · ${esc(formatPlanDate(month.start))} – ${esc(formatPlanDate(month.end))}</span>
-      <h4>Monthly focus</h4>
-      <p>${esc(month.focus || 'No monthly objective was identified in this plan section.')}</p>
-      ${planReviewLine('Monthly review', month.review_date)}
-    </article>` : ''}
-    ${quarter ? `<article class="plan-card">
-      <span class="plan-kicker">${esc(quarterTitle)} · ${esc(formatPlanDate(quarter.start))} – ${esc(formatPlanDate(quarter.end))}</span>
-      <h4>Quarterly milestone</h4>
-      <p>${esc(quarter.focus || 'No quarterly objective was identified in this plan section.')}</p>
-      ${planReviewLine('Quarterly review', quarter.review_date)}
-    </article>` : ''}
-  </div>`;
-}
-
-async function loadDashboardPlan() {
-  try {
-    const result = await api('/api/dashboard-plan');
-    renderPlanSummary(result.plan);
-  } catch (err) {
-    $('#planHeading').textContent = 'Your date-based plan';
-    $('#planCaption').textContent = 'Could not load your schedule';
-    $('#planSummary').innerHTML = `<div class="empty"><span>${esc(err.message)}</span></div>`;
-  }
-}
-
-async function loadDashboardOverview() {
-  clearTimeout(overviewTimer);
-  if (overviewLoadInProgress) return;
-  overviewLoadInProgress = true;
-  const list = $('#recentDocuments');
-  list.innerHTML = '<div class="empty"><span class="spin" style="margin:0 auto"></span></div>';
-  const planLoad = loadDashboardPlan();
-  try {
-    const overview = await api('/api/dashboard-overview');
-    const documents = overview.recent_documents || [];
-    overviewHasProcessing = overview.processing_documents > 0;
-    $('#overviewTotal').textContent = overview.total_documents;
-    $('#overviewExtracted').textContent = overview.extracted_documents;
-    $('#overviewProcessing').textContent = overview.processing_documents;
-    $('#overviewCaption').textContent = overview.total_documents
-      ? `Showing ${documents.length} most recent of ${overview.total_documents} uploaded ${overview.total_documents === 1 ? 'file' : 'files'}`
-      : 'Your uploaded plans and documents will appear here.';
-    if (!documents.length) {
-      list.innerHTML = `<div class="empty">
-        <b>No plans or documents uploaded yet</b>
-        <span>Upload a plan or document to see it in your personal workspace.</span>
-      </div>`;
-    } else {
-      list.innerHTML = documents.map(overviewDocumentRow).join('');
-      wire(list);
-    }
-  } catch (err) {
-    overviewHasProcessing = false;
-    $('#overviewTotal').textContent = '—';
-    $('#overviewExtracted').textContent = '—';
-    $('#overviewProcessing').textContent = '—';
-    $('#overviewCaption').textContent = 'Could not load your overview';
-    list.innerHTML = `<div class="empty"><span>${esc(err.message)}</span></div>`;
-  } finally {
-    overviewLoadInProgress = false;
-    if (overviewHasProcessing && $('#v-home').classList.contains('active')) {
-      overviewTimer = setTimeout(loadDashboardOverview, 3000);
-    }
-    await planLoad;
-  }
-}
-
-$('#refreshOverviewBtn').onclick = loadDashboardOverview;
-$('#refreshPlanBtn').onclick = loadDashboardPlan;
-
-const ACTIVITY_PAGE_SIZE = 50;
-let activityOffset = 0;
-let activityLoadInProgress = false;
-
-function activityRow(activity) {
-  return `<article class="activity-item">
-    <span class="activity-marker" aria-hidden="true"></span>
-    <div class="activity-content">
-      <p>${esc(activity.description)}</p>
-      <time datetime="${esc(activity.created_at || '')}">${esc(fmtDate(activity.created_at))}</time>
-    </div>
-  </article>`;
-}
-
-async function loadActivity(reset = true) {
-  if (activityLoadInProgress) return;
-  activityLoadInProgress = true;
-  const list = $('#activityList');
-  if (reset) {
-    activityOffset = 0;
-    list.innerHTML = '<div class="empty"><span class="spin" style="margin:0 auto"></span></div>';
-  }
-  try {
-    const result = await api(
-      `/api/activity?limit=${ACTIVITY_PAGE_SIZE}&skip=${activityOffset}`
-    );
-    const activities = result.activities || [];
-    const html = activities.map(activityRow).join('');
-    if (reset) list.innerHTML = html;
-    else list.insertAdjacentHTML('beforeend', html);
-    activityOffset += activities.length;
-    $('#activityCount').textContent = `${result.total_activities} recorded ${result.total_activities === 1 ? 'activity' : 'activities'}`;
-    $('#loadMoreActivityBtn').hidden = activityOffset >= result.total_activities;
-    if (!activities.length && reset) {
-      list.innerHTML = '<div class="empty"><b>No activity yet</b><span>Your account actions will appear here.</span></div>';
-    }
-  } catch (err) {
-    if (reset) {
-      $('#activityCount').textContent = 'Could not load activity';
-      list.innerHTML = `<div class="empty"><span>${esc(err.message)}</span></div>`;
-    } else {
-      toast(err.message, 'err');
-    }
-  } finally {
-    activityLoadInProgress = false;
-  }
-}
-
-$('#refreshActivityBtn').onclick = () => loadActivity();
-$('#loadMoreActivityBtn').onclick = () => loadActivity(false);
-
-function summaryCard(doc) {
-  const details = doc.details || {};
-  const title = doc.title || doc.filename || 'Untitled document';
-  const type = details.document_type && details.document_type !== 'Not available'
-    ? details.document_type
-    : 'document';
-  let summary;
-  if (doc.summary_status === 'completed' && doc.summary) {
-    summary = `${doc.summary_note
-      ? `<p class="assistant-status">${esc(doc.summary_note)}</p>`
-      : ''}<div class="assistant-summary">${formatAssistantSummary(doc.summary)}</div>`;
-  } else if (doc.extraction_status === 'pending' ||
-      ['pending', 'processing', 'generating'].includes(doc.summary_status)) {
-    summary = `<p class="assistant-status"><span class="spin"></span>${
-      doc.extraction_status === 'pending'
-        ? 'Waiting for the saved text extraction to finish…'
-        : 'Generating a summary with local Ollama; unverifiable output will fall back to exact extracted lines…'
-    }</p>`;
-  } else if (doc.summary_status === 'needs_review') {
-    summary = `<p class="assistant-status assistant-review">${
-      esc(doc.summary_review_reason || doc.summary_error || 'The saved text needs review before a reliable summary can be shown.')
-    }</p>`;
-  } else if (doc.summary_status === 'failed') {
-    summary = `<p class="assistant-status assistant-error">${esc(
-      doc.summary_error || 'Temporary summary generation failures remain recorded for recovery.'
-    )}</p>`;
-  } else {
-    summary = `<p class="assistant-status">${
-      doc.extraction_status === 'failed'
-        ? `Text extraction failed${doc.extraction_error ? `: ${esc(doc.extraction_error)}` : '.'}`
-        : doc.extraction_status === 'unsupported'
-          ? 'This file type does not have saved extracted text to summarize.'
-          : 'No extracted text is available for summarization.'
-    }</p>`;
-  }
-
-  const fields = [
-    ['Name', details.holder_name],
-    ["Father's name", details.father_name],
-    ['Document number', details.document_number !== details.aadhaar_number &&
-      details.document_number !== details.abha_number &&
-      details.document_number !== details.policy_number &&
-      details.document_number !== details.pan_number
-      ? details.document_number : 'Not available'],
-    ['PAN number', details.pan_number],
-    ['Aadhaar number', details.aadhaar_number],
-    ['ABHA number', details.abha_number],
-    ['Policy number', details.policy_number],
-    ['Date of birth', details.date_of_birth],
-    ['Mobile / phone', details.mobile_or_phone],
-    ['Email', details.email],
-    ['Issue date', details.issue_date],
-    ['Coverage', details.coverage],
-    ['Premium', details.premium],
-    ['Blood group', details.blood_group],
-  ].filter(([, value]) => value && value !== 'Not available');
-  if (details.expiry_date && details.expiry_date !== 'Not available') {
-    fields.push(['Expiry / validity date', details.expiry_date]);
-    fields.push(['Validity status', expiryStatusLabel(details.expiry_status)]);
-    fields.push(['Time remaining', expiryTimeLabel(details)]);
-  } else if (details.expiry_status === 'verification_required') {
-    fields.push(['Validity status', expiryStatusLabel(details.expiry_status)]);
-  }
-  const marksLines = Array.isArray(details.marks_details) ? details.marks_details : [];
-  const fieldMarkup = fields.length || marksLines.length
-    ? `<div class="assistant-facts">${fields.map(([label, value]) =>
-        `<div><span>${esc(label)}</span><b>${esc(value)}</b></div>`
-      ).join('')}${marksLines.length
-        ? `<div class="assistant-marks"><span>Marks / result lines from text</span><ul>${marksLines.map(line => `<li>${esc(line)}</li>`).join('')}</ul></div>`
-        : ''}</div>`
-    : '<p class="assistant-status">No common labeled fields were identified. The summary below is based on readable saved text when available.</p>';
-  const timestamp = doc.uploaded_at ? ` · Uploaded ${fmtDate(doc.uploaded_at)}` : '';
-
-  return `<article class="assistant-message" data-summary-card="${esc(doc.id)}">
-    <span class="assistant-avatar" aria-label="AI assistant">AI</span>
-    <div class="assistant-bubble">
-      <p class="assistant-intro">Here are the details found in your ${esc(type)} document:</p>
-      <h4>${esc(title)}</h4>
-      <p class="assistant-meta">${esc(doc.filename || '')}${esc(timestamp)}</p>
-      ${fieldMarkup}
-      <h5>Summary</h5>
-      ${summary}
-    </div>
-  </article>`;
-}
-
-async function loadDashboardSummaries() {
-    clearTimeout(dashboardSummaryTimer);
-    if (dashboardSummaryLoadInProgress) return;
-    dashboardSummaryLoadInProgress = true;
-    const list = $('#dashboardSummaries');
-    try {
-      const { documents, totalDocuments } = await fetchAllDocuments();
-      $('#summaryCount').textContent = totalDocuments
-        ? `${totalDocuments} saved document${totalDocuments === 1 ? '' : 's'} · summaries are based on saved extracted text`
-        : 'No saved documents';
-      dashboardSummaryHasPending = documents.some(doc =>
-        doc.extraction_status === 'pending' ||
-        ['pending', 'processing', 'generating'].includes(doc.summary_status)
-      );
-      if (!documents.length) {
-        list.innerHTML = `<div class="assistant-message"><span class="assistant-avatar">AI</span><div class="assistant-bubble">No documents are saved in your account yet. After you upload a supported document and its text is extracted, its summary and details will appear here.</div></div>`;
-        return;
-      }
-      list.innerHTML = `<div class="assistant-message assistant-welcome">
-        <span class="assistant-avatar">AI</span>
-        <div class="assistant-bubble">Here are your saved documents. Each message below uses the extracted text stored for that document. Any validity countdown is calculated by the backend only when an expiry date is clearly available.</div>
-      </div>${documents.map(summaryCard).join('')}`;
-    } catch (err) {
-      dashboardSummaryHasPending = false;
-      $('#summaryCount').textContent = 'Could not load document summaries';
-      list.innerHTML = `<div class="empty"><span>${esc(err.message)}</span></div>`;
-    } finally {
-      dashboardSummaryLoadInProgress = false;
-      if (dashboardSummaryHasPending) {
-        dashboardSummaryTimer = setTimeout(loadDashboardSummaries, 3000);
-      }
-    }
-}
-
-$('#refreshSummariesBtn').onclick = loadDashboardSummaries;
-
-function docRows(docs, compact) {
-  if (!docs.length) {
-    return `<div class="empty">
-      <div class="ei"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg></div>
-      <b>No documents yet</b>
-      <span>Upload your first file to get started.</span>
-      <div style="margin-top:16px"><button class="btn btn-primary btn-sm" style="width:auto" data-view="v-upload">Upload a document</button></div>
-    </div>`;
-  }
-  return `<table>
-    <thead><tr><th>Document</th>${compact ? '' : '<th>Type</th>'}<th>Size</th><th>Uploaded</th><th></th></tr></thead>
-    <tbody>${docs.map(d => `
-      <tr>
-        <td><div class="doc-cell">
-          <span class="ftype">${extOf(d)}</span>
-          <span class="dt"><span class="dn">${esc(d.title)}</span><span class="df">${esc(d.filename)} · Text: ${esc(d.extraction_status || 'pending')} · ${esc(expiryStatusLabel(d.details?.expiry_status))}</span></span>
-        </div></td>
-        ${compact ? '' : `<td><span class="pill">${esc(d.content_type)}</span></td>`}
-        <td>${fmtBytes(d.size)}</td>
-        <td><span style="color:var(--muted)">${fmtDate(d.uploaded_at)}</span></td>
-        <td><div class="acts">
-          <button class="btn btn-ghost btn-sm" data-doc-details="${esc(d.id)}" type="button">Summary</button>
-          ${(d.extraction_status !== 'completed' &&
-            ((d.filename || '').toLowerCase().endsWith('.txt') ||
-              (d.content_type || '').toLowerCase().startsWith('text/plain')))
-            ? `<button class="btn btn-ghost btn-sm" data-extract="${esc(d.id)}" type="button">Extract text</button>`
-            : ''}
-          <a class="btn btn-ghost btn-sm" href="/api/documents/${d.id}/download">Download</a>
-          <button class="btn btn-danger btn-sm" data-del="${d.id}" data-name="${esc(d.title)}">Delete</button>
-        </div></td>
-      </tr>`).join('')}
-    </tbody></table>`;
-}
-
-function wire(root) {
-  $$('[data-del]', root).forEach(b => b.onclick = async () => {
-    if (!confirm('Delete "' + b.dataset.name + '"? This cannot be undone.')) return;
-    b.disabled = true;
-    try {
-      await api('/api/documents/' + b.dataset.del, { method: 'DELETE' });
-      toast('Document deleted');
-      loadDocs(); loadDash(); loadDashboardOverview();
-    } catch (err) { toast(err.message, 'err'); b.disabled = false; }
+async function loadDashboard(){
+  var response=await fetch("/api/dashboard-data",{credentials:"same-origin"});
+  var result=await response.json().catch(function(){return {}});
+  if(response.status===401){window.location.replace("/login");throw new Error("Please sign in again.")}
+  if(!response.ok)throw new Error(result.detail||"Could not load dashboard data.");
+  var today=localDate();
+  DATA.user=result.user&&result.user.name||"there";
+  DATA.plan=result.plan||null;
+  DATA.tasks=(result.tasks||[]).filter(function(task){
+    return task.status!=="Skipped"&&(task.task_date===today||task.due_date===today);
+  }).map(function(task){
+    return {
+      id:task.id,
+      title:task.title,
+      project:task.category||String(task.task_type||"Task").replace(/_/g," "),
+      due:task.start_time||task.due_date||today,
+      pri:String(task.priority||"med").toLowerCase(),
+      done:task.status==="Completed"
+    };
   });
-  $$('[data-view]', root).forEach(b => b.onclick = () => go(b.dataset.view));
-  $$('[data-doc-details]', root).forEach(b => b.onclick = () => showDocumentDetails(b.dataset.docDetails));
-  $$('[data-extract]', root).forEach(b => b.onclick = async () => {
-    b.disabled = true;
-    b.textContent = 'Extracting…';
-    try {
-      const result = await api('/api/documents/' + b.dataset.extract + '/extract-text', {
-        method: 'POST',
-      });
-      if (result.extraction_status === 'completed') {
-        toast('Text extracted; preparing your plan summary');
-      } else {
-        toast(result.extraction_error || `Extraction status: ${result.extraction_status}`, 'err');
-      }
-      loadDocs();
-      loadDash();
-      loadDashboardOverview();
-    } catch (err) {
-      toast(err.message, 'err');
-      b.disabled = false;
-      b.textContent = 'Extract text';
-    }
+  DATA.meetings=(result.meetings||[]).filter(function(meeting){
+    return meeting.start_minute!=null&&meeting.end_minute!=null;
+  }).map(function(meeting){
+    return {
+      title:meeting.activity||"Meeting",
+      start:minuteHour(meeting.start_minute),
+      end:minuteHour(meeting.end_minute),
+      where:meeting.location||"",
+      link:false
+    };
   });
+  DATA.docs=(result.documents||[]).map(function(doc){
+    var details=doc.details||{};
+    return {
+      id:doc.id,
+      name:doc.title||doc.filename||"Untitled document",
+      type:details.document_type&&details.document_type!=="Not available"?details.document_type:"Document",
+      days:details.days_remaining
+    };
+  }).filter(function(doc){return typeof doc.days==="number"&&doc.days>=0&&doc.days<=5});
+  header();timeline();planOverview();tasks();meetings();docs();
 }
 
-function expiryStatusLabel(status) {
-  return ({
-    expired: 'Expired',
-    expiring_soon: 'Expiring Soon',
-    valid: 'Valid',
-    unavailable: 'Expiry Date Unavailable',
-    verification_required: 'Verification Required',
-  })[status] || 'Expiry Date Unavailable';
+function planOverview(){
+  var plan=DATA.plan;
+  $("planCard").hidden=!plan;
+  if(!plan)return;
+  var schedule=plan.schedule||{},today=schedule.today||{};
+  var month=schedule.month||schedule.next_month;
+  var quarter=schedule.quarter||schedule.next_quarter;
+  $("planTitle").textContent=plan.title||"Work plan";
+  $("planPeriod").textContent=schedule.plan_start&&schedule.plan_end
+    ?dateLabel(schedule.plan_start)+" – "+dateLabel(schedule.plan_end)
+    :"";
+  $("planStatus").textContent="";
+  $("planFocus").textContent=today.focus||"No focus is listed for today.";
+  $("planRoutine").textContent=today.routine||"";
+  $("planStatus").textContent=schedule.in_plan_period===true?"Active today":
+    schedule.in_plan_period===false?"Outside plan period":"";
+  $("planMonthLabel").textContent=schedule.month?"Monthly focus":"Next monthly focus";
+  $("planMonth").textContent=month
+    ?(month.focus||("Month "+month.number+" ("+dateLabel(month.start)+" – "+dateLabel(month.end)+")"))
+    :"No monthly focus available.";
+  $("planQuarterLabel").textContent=schedule.quarter?"Quarterly focus":"Next quarterly focus";
+  $("planQuarter").textContent=quarter
+    ?(quarter.focus||("Q"+quarter.number+" "+(quarter.title||"")+" ("+dateLabel(quarter.start)+" – "+dateLabel(quarter.end)+")"))
+    :"No quarterly focus available.";
+  $("planMilestones").hidden=!month&&!quarter;
 }
 
-function expiryTimeLabel(details) {
-  if (details.expiry_status === 'expired') return `Expired ${Math.abs(details.days_remaining)} days ago`;
-  if (details.expiry_status === 'expiring_soon') return `${details.days_remaining} days remaining`;
-  if (details.expiry_status === 'valid') return `${details.days_remaining} days remaining`;
-  if (details.expiry_status === 'verification_required') return 'Please verify the extracted expiry date';
-  return 'Expiry date unavailable';
+function header(){
+  var g = nowH<12?"Good morning":nowH<17?"Good afternoon":"Good evening";
+  $("greet").textContent = g + ", " + DATA.user;
+  $("date").textContent = now.toLocaleDateString("en-IN",{weekday:"long",day:"numeric",month:"long",year:"numeric"});
 }
 
-function summaryMessage(doc) {
-  if (doc.summary_status === 'completed' && doc.summary) return doc.summary;
-  if (['processing', 'generating', 'pending'].includes(doc.summary_status)) {
-    if (doc.extraction_status === 'pending') return 'Waiting for text extraction to finish…';
-    return 'The local AI is preparing a source-verified summary…';
+function timeline(){
+  var S=8,E=19,span=E-S,html="";
+  for(var h=S;h<E;h++) html+='<div class="tl-h" style="left:'+((h-S)/span*100)+'%">'+fmt(h).replace(":00","")+'</div>';
+  DATA.meetings.forEach(function(m,i){
+    var l=(m.start-S)/span*100,w=(m.end-m.start)/span*100;
+    html+='<div class="tl-m'+(i%2?' l2':'')+'" style="left:'+l+'%;width:'+w+'%" title="'+esc(m.title)+'">'+esc(m.title)+'<small>'+fmt(m.start)+'</small></div>';
+  });
+  if(nowH>=S&&nowH<=E) html+='<div class="tl-now" style="left:'+((nowH-S)/span*100)+'%"></div>';
+  $("track").innerHTML='<div class="tl-hours">'+html+'</div>';
+  var next=DATA.meetings.filter(function(m){return m.start>nowH})[0];
+  $("tlNote").textContent = next ? "Next: "+next.title+" at "+fmt(next.start) : "No more meetings today";
+}
+
+function tasks(){
+  var all=DATA.tasks, open=all.filter(function(t){return !t.done}).length, done=all.length-open;
+  $("prog").style.width=(all.length?done/all.length*100:0)+"%";
+  $("sTasks").textContent=open; $("navTasks").textContent=open;
+  var list=all.filter(function(t){return filter==="all"||!t.done});
+  $("tasks").innerHTML = list.length ? list.map(function(t){
+    var due=taskTime(t.due);
+    return '<li class="task'+(t.done?' done':'')+'"><input type="checkbox" id="t'+esc(t.id)+'" data-id="'+esc(t.id)+'"'+(t.done?' checked':'')+'>'+
+      '<label for="t'+esc(t.id)+'"><span class="t">'+esc(t.title)+'</span><span class="meta">'+esc(t.project)+' &middot; due '+esc(due)+'</span></label>'+
+      '<span class="tag '+(t.pri==="high"?"hi":t.pri==="low"?"ok":"md")+'">'+esc(t.pri.charAt(0).toUpperCase()+t.pri.slice(1))+'</span></li>';
+  }).join("") : '<li class="empty">'+(all.length?"Nothing left. All tasks for today are done.":"No tasks scheduled for today.")+'</li>';
+}
+
+function meetings(){
+  var left=DATA.meetings.filter(function(m){return m.end>nowH}).length;
+  $("sMeet").textContent=left;
+  $("meetCount").textContent=DATA.meetings.length+" today";
+  $("meets").innerHTML = DATA.meetings.map(function(m){
+    var past=m.end<=nowH, live=m.start<=nowH&&m.end>nowH;
+    return '<li class="mt'+(past?' past':'')+'"><div class="time">'+fmt(m.start).replace(" ","&nbsp;")+'<span>'+Math.round((m.end-m.start)*60)+' min</span></div>'+
+      '<div><div class="t">'+esc(m.title)+'</div><div class="meta">'+esc(m.where)+'</div></div>'+
+      (live?'<span class="tag ok">In progress</span>':(m.link&&!past?'<button class="join">Join</button>':''))+'</li>';
+  }).join("");
+}
+
+function docs(){
+  var open=DATA.docs.filter(function(d){return !d.renewed});
+  var today=open.filter(function(d){return d.days===0}), soon=open.filter(function(d){return d.days>0});
+  $("sDocs").textContent=today.length; $("navDocs").textContent=open.length;
+  function row(d){
+    var tag = d.days===0 ? '<span class="tag hi">Today</span>' : '<span class="tag md">In '+d.days+' day'+(d.days>1?'s':'')+'</span>';
+    return '<div class="doc"><div><div class="t">'+esc(d.name)+'</div><div class="meta">'+esc(d.type)+' &middot; '+dayLabel(d.days)+'</div></div>'+
+      '<div style="display:flex;gap:8px;align-items:center">'+tag+
+      '<button class="act" type="button" disabled title="Renewal is not available yet">Renew</button></div></div>';
   }
-  if (doc.summary_status === 'needs_review') {
-    return doc.summary_review_reason || doc.summary_error || 'The saved extracted text needs review.';
-  }
-  if (doc.summary_status === 'failed') {
-    return doc.summary_error || 'Summary generation failed after automatic retries.';
-  }
-  return 'No extracted text is available for summarization.';
+  var h='<div class="grp">Expires today ('+today.length+')</div>'+(today.length?today.map(row).join(""):'<div class="empty">Nothing expires today.</div>')+
+        '<div class="grp">Within 5 days ('+soon.length+')</div>'+(soon.length?soon.map(row).join(""):'<div class="empty">Nothing else expiring soon.</div>');
+  $("docs").innerHTML=h;
 }
 
-function formatAssistantSummary(text) {
-  const formatInline = value => String(value).split(/(\*\*[^*]+\*\*)/g).map(part =>
-    part.startsWith('**') && part.endsWith('**')
-      ? `<strong>${esc(part.slice(2, -2))}</strong>`
-      : esc(part)
-  ).join('');
-  return String(text || '').split(/\r?\n/).map(line => {
-    const value = line.trim();
-    if (!value) return '';
-    if (value.startsWith('## ')) return `<h5>${esc(value.slice(3))}</h5>`;
-    if (value.startsWith('### ')) return `<h6>${esc(value.slice(4))}</h6>`;
-    if (value.startsWith('- ')) {
-      return `<div class="assistant-summary-item"><span aria-hidden="true">•</span><span>${formatInline(value.slice(2))}</span></div>`;
-    }
-    return `<p>${formatInline(value)}</p>`;
-  }).join('');
-}
-
-async function showDocumentDetails(docId) {
-  const dialog = $('#documentDialog');
-  $('#dialogTitle').textContent = 'Loading…';
-  $('#dialogMeta').textContent = '';
-  $('#dialogFields').innerHTML = '';
-  $('#dialogSummary').textContent = 'Loading summary…';
-  $('#dialogExtractedText').textContent = '';
-  dialog.showModal();
-  try {
-    const doc = await api('/api/documents/' + docId);
-    const details = doc.details || {};
-    $('#dialogTitle').textContent = doc.title || doc.filename || 'Document';
-    $('#dialogMeta').textContent = `${doc.filename || ''} · Uploaded ${fmtDate(doc.uploaded_at)}`;
-    const fields = [
-      ['Document type', details.document_type],
-      ['Holder name', details.holder_name],
-      ["Father's name", details.father_name],
-      ['PAN number', details.pan_number],
-      ['Document number', details.document_number],
-      ['Aadhaar number', details.aadhaar_number],
-      ['ABHA number', details.abha_number],
-      ['Date of birth', details.date_of_birth],
-      ['Mobile / phone', details.mobile_or_phone],
-      ['Email', details.email],
-      ['Issue date', details.issue_date],
-      ['Expiry date', details.expiry_date],
-    ].filter(([, value]) =>
-      value && value !== 'Not available' && value !== 'unavailable'
-    );
-    if (details.expiry_status && details.expiry_status !== 'unavailable') {
-      fields.push(['Status', expiryStatusLabel(details.expiry_status)]);
-      if (details.expiry_date && details.expiry_date !== 'Not available') {
-        fields.push(['Time remaining', expiryTimeLabel(details)]);
-      }
-    }
-    $('#dialogFields').innerHTML = fields.length
-      ? fields.map(([label, value]) =>
-          `<div><span>${esc(label)}</span><b>${esc(value)}</b></div>`
-        ).join('')
-      : '<p class="assistant-status">No document details were identified.</p>';
-    $('#dialogSummary').innerHTML = formatAssistantSummary(summaryMessage(doc));
-    $('#dialogExtractedText').textContent = doc.extracted_text || 'No text was extracted from this document.';
-    if (['pending', 'processing', 'generating'].includes(doc.summary_status)) {
-      setTimeout(() => {
-        if (dialog.open) showDocumentDetails(docId);
-      }, 3000);
-    }
-  } catch (err) {
-    $('#dialogSummary').textContent = err.message;
-  }
-}
-
-$('#dialogClose').onclick = () => $('#documentDialog').close();
-$('#documentDialog').addEventListener('click', event => {
-  if (event.target === $('#documentDialog')) $('#documentDialog').close();
-});
-
-async function loadDash() {
-  await loadDashboardSummaries();
-}
-
-let extractionPollTimer;
-async function loadDocs() {
-  clearTimeout(extractionPollTimer);
-  const q = $('#search').value.trim();
-  $('#docsWrap').innerHTML = '<div class="empty"><span class="spin" style="margin:0 auto"></span></div>';
-  try {
-    const d = await api('/api/documents?limit=200&q=' + encodeURIComponent(q));
-    $('#docCount').textContent = d.documents.length + (d.documents.length === 1 ? ' document' : ' documents');
-    $('#docsWrap').innerHTML = docRows(d.documents, false);
-    wire($('#docsWrap'));
-    if (d.documents.some(doc =>
-      doc.extraction_status === 'pending' ||
-      ['pending', 'processing', 'generating'].includes(doc.summary_status)
-    )) {
-      extractionPollTimer = setTimeout(loadDocs, 3000);
-    }
-  } catch (err) { toast(err.message, 'err'); }
-}
-
-let searchTimer;
-$('#search').oninput = () => { clearTimeout(searchTimer); searchTimer = setTimeout(loadDocs, 280); };
-
-/* ---------- upload ---------- */
-const drop = $('#drop'), fileInput = $('#file');
-drop.onclick = () => fileInput.click();
-['dragenter', 'dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('over'); }));
-['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('over'); }));
-drop.addEventListener('drop', e => {
-  if (e.dataTransfer.files.length) { fileInput.files = e.dataTransfer.files; showPick(); }
-});
-fileInput.onchange = showPick;
-
-function showPick() {
-  const f = fileInput.files[0];
-  if (!f) return $('#picked').classList.remove('show');
-  $('#pickedName').textContent = f.name;
-  $('#pickedSize').textContent = fmtBytes(f.size) + ' · ' + (f.type || 'unknown type');
-  $('#pickedType').textContent = (f.name.match(/\.([a-z0-9]{1,5})$/i) || [, 'FILE'])[1].toUpperCase().slice(0, 4);
-  $('#picked').classList.add('show');
-  $('#upAlert').className = 'alert';
-}
-$('#clearPick').onclick = () => { fileInput.value = ''; $('#picked').classList.remove('show'); };
-
-async function watchExtraction(docId, title, alertEl) {
-  const deadline = Date.now() + 95000;
-  while (Date.now() < deadline) {
-    await new Promise(resolve => setTimeout(resolve, 3000));
-    try {
-      const doc = await api('/api/documents/' + docId);
-      if (doc.extraction_status === 'completed') {
-        banner(alertEl, '"' + title + '" uploaded; text extraction completed.', 'ok');
-        loadDocs(); loadDashboardOverview();
-        return;
-      }
-      if (doc.extraction_status === 'failed' || doc.extraction_status === 'no_text') {
-        const detail = doc.extraction_error ? ' ' + doc.extraction_error : '';
-        banner(alertEl, '"' + title + '" uploaded, but extraction ' + doc.extraction_status + '.' + detail, 'err');
-        loadDocs(); loadDashboardOverview();
-        return;
-      }
-    } catch (err) {
-      banner(alertEl, '"' + title + '" uploaded. Could not check extraction status: ' + err.message, 'err');
+document.addEventListener("change",function(e){
+  if(e.target.matches("#uploadFile")){
+    var file=e.target.files[0];
+    if(!file)return;
+    e.target.value="";
+    if(file.size>25*1024*1024){
+      $("uploadStatus").textContent="File is too large. Maximum size is 25 MB.";
       return;
     }
+    var button=$("uploadButton"),formData=new FormData();
+    formData.append("file",file);
+    button.disabled=true;
+    $("uploadStatus").textContent="Uploading "+file.name+"…";
+    fetch("/api/upload",{
+      method:"POST",
+      credentials:"same-origin",
+      body:formData
+    }).then(async function(response){
+      var result=await response.json().catch(function(){return {}});
+      if(response.status===401){window.location.replace("/login");throw new Error("Please sign in again.")}
+      if(!response.ok)throw new Error(result.detail||"Could not upload the document.");
+      $("uploadStatus").textContent="Uploaded "+(result.title||file.name)+".";
+      $("pageError").textContent="";
+      try{await loadDashboard()}catch(error){
+        if(error.message!=="Please sign in again.")$("pageError").textContent=error.message;
+      }
+    }).catch(function(error){
+      if(error.message!=="Please sign in again.")$("uploadStatus").textContent=error.message;
+    }).finally(function(){button.disabled=false});
+    return;
   }
-  banner(alertEl, '"' + title + '" uploaded, but extraction is still pending after 90 seconds. Check the server log.', 'err');
-}
-
-$('#upForm').onsubmit = async e => {
-  e.preventDefault();
-  const al = $('#upAlert');
-  const f = fileInput.files[0];
-  if (!f) return banner(al, 'Please choose a file first', 'err');
-  if (f.size > 25 * 1024 * 1024) return banner(al, 'File is larger than 25 MB', 'err');
-
-  const btn = e.target.querySelector('button[type=submit]');
-  const orig = btn.innerHTML;
-  btn.disabled = true;
-  btn.innerHTML = '<span class="spin"></span> Uploading…';
-
-  const fd = new FormData();
-  fd.append('file', f);
-  fd.append('title', $('#up-title').value.trim());
-  try {
-    const r = await api('/api/upload', { method: 'POST', body: fd });
-    banner(al, '"' + r.title + '" uploaded. Checking text extraction status…', 'ok');
-    toast('Upload complete');
-    fileInput.value = '';
-    $('#up-title').value = '';
-    $('#picked').classList.remove('show');
-    loadActivity();
-    loadDocs();
-    loadDashboardOverview();
-    if (r.extraction_status === 'pending') watchExtraction(r.id, r.title, al);
-  } catch (err) {
-    const message = err instanceof TypeError && err.message === 'Failed to fetch'
-      ? 'Connection to the server was interrupted. Check Documents before retrying; the file may already have uploaded.'
-      : err.message;
-    banner(al, message, 'err');
-  } finally {
-    btn.disabled = false;
-    btn.innerHTML = orig;
+  if(e.target.matches("#tasks input")){
+    var input=e.target,t=DATA.tasks.filter(function(x){return x.id===input.dataset.id})[0];
+    if(!t)return;
+    input.disabled=true;
+    fetch("/api/tasks/"+encodeURIComponent(t.id),{
+      method:"PATCH",
+      credentials:"same-origin",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({status:input.checked?"Completed":"Pending"})
+    }).then(async function(response){
+      var result=await response.json().catch(function(){return {}});
+      if(response.status===401){window.location.replace("/login");throw new Error("Please sign in again.")}
+      if(!response.ok)throw new Error(result.detail||"Could not update task.");
+      $("pageError").textContent="";
+      try{await loadDashboard()}catch(error){
+        if(error.message!=="Please sign in again.")$("pageError").textContent=error.message;
+      }
+    }).catch(function(error){
+      input.checked=!input.checked;
+      $("pageError").textContent=error.message;
+    }).finally(function(){input.disabled=false});
   }
-};
+});
+document.addEventListener("click",function(e){
+  if(e.target.closest("#uploadButton")){$("uploadFile").click();return}
+  var f=e.target.closest(".tabs button");
+  if(f){filter=f.dataset.f;document.querySelectorAll(".tabs button").forEach(function(b){b.setAttribute("aria-pressed",b===f)});tasks();return}
+});
 
-/* ---------- profile ---------- */
-$('#profForm').onsubmit = async e => {
-  e.preventDefault();
-  const al = $('#profAlert');
-  const body = {
-    name: $('#pf-name').value.trim(),
-    phone: $('#pf-phone').value.trim(),
-  };
-  const newPass = $('#pf-new').value;
-  if (!body.name || !body.phone) return banner(al, 'Name and phone cannot be empty', 'err');
-  if (newPass) {
-    if (newPass.length < 6) return banner(al, 'New password must be at least 6 characters', 'err');
-    if (newPass !== $('#pf-new2').value) return banner(al, 'New passwords do not match', 'err');
-    if (!$('#pf-cur').value) return banner(al, 'Enter your current password to change it', 'err');
-    body.current_password = $('#pf-cur').value;
-    body.new_password = newPass;
-    body.confirm_password = $('#pf-new2').value;
-  }
-
-  const btn = e.target.querySelector('button[type=submit]');
-  const orig = btn.innerHTML;
-  btn.disabled = true;
-  btn.innerHTML = '<span class="spin"></span> Saving…';
-  try {
-    const r = await api('/api/me', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    banner(al, 'Profile updated successfully.', 'ok');
-    toast('Profile saved');
-    $('#navName').textContent = r.user.name;
-    $('#menuName').textContent = r.user.name;
-    $('#avatar').textContent = (r.user.name[0] || '?').toUpperCase();
-    ['#pf-cur', '#pf-new', '#pf-new2'].forEach(s => $(s).value = '');
-  } catch (err) {
-    banner(al, err.message, 'err');
-  } finally {
-    btn.disabled = false;
-    btn.innerHTML = orig;
-  }
-};
-
-loadDashboardOverview();
+loadDashboard().catch(function(error){
+  if(error.message!=="Please sign in again.")$("pageError").textContent=error.message;
+});
 </script>
 </body>
 </html>

@@ -1,6 +1,9 @@
-# AI Analysis
+# AI Analysis Backend
 
-FastAPI + MongoDB Atlas app — auth, dashboard, profile, and per-user document uploads.
+API-only FastAPI + MongoDB Atlas backend for authentication, tasks, activity,
+document uploads, OCR, and summaries. A responsive HTML/CSS sign-in and
+registration page is served by FastAPI; application APIs and the generated
+OpenAPI documentation are also available.
 
 ## Run
 
@@ -9,7 +12,8 @@ pip install -r requirements.txt
 python -m uvicorn main:app --reload --port 8000
 ```
 
-Open http://127.0.0.1:8000 → `/login`
+Open `http://127.0.0.1:8000/docs` for the interactive API documentation.
+Open `http://127.0.0.1:8000/` for the sign-in and registration page.
 
 ## Config (`.env`)
 
@@ -23,16 +27,16 @@ Open http://127.0.0.1:8000 → `/login`
 | `OLLAMA_MODEL` | Self-hosted summary model (default `qwen3:0.6b`) |
 | `OLLAMA_TIMEOUT_SECONDS` | Local summary request timeout (default 180 seconds) |
 
-## Pages
+## Web UI
 
-- `/login` — Sign In / Sign Up tabs (name, email, phone, new password, confirm password)
-- `/dashboard` — single-page shell with five views:
-  - **Dashboard** — caller-owned upload counts, extraction progress, latest uploads, and date-aware daily, weekly, monthly, and quarterly summaries from structured uploaded plans
-  - **Activity** — a private, paginated account activity timeline for sign-ins, profile changes, document uploads/downloads/deletions, and extraction/summary retries
-  - **AI Assistant** — chat-style, automatically visible summaries and source-backed details for all caller-owned documents
-  - **Upload** — optional title + drag-and-drop / click-to-browse, 25 MB cap
-  - **Documents** — searchable table, download, delete
-  - **Profile** (avatar menu) — edit name and phone, change password; **email is locked**
+The root path (`/`) and `/login` serve the responsive authentication page;
+`/signup` opens the same page with registration selected. The page submits to
+the existing `/api/login` and `/api/signup` endpoints and uses their httpOnly
+session cookie. Successful authentication opens `/dashboard`, which uses the
+provided daily-summary HTML and loads the authenticated user's tasks, today's
+meetings, and upcoming document-expiry alerts from `GET /api/dashboard-data`.
+Task checkboxes save status through the existing `PATCH /api/tasks/{id}`
+endpoint. Unauthenticated dashboard access redirects to `/login`.
 
 ## API
 
@@ -45,7 +49,11 @@ Open http://127.0.0.1:8000 → `/login`
 | PUT | `/api/me` | Update name / phone / password (email immutable) |
 | GET | `/api/activity` | Paginated activity history for the authenticated user |
 | GET | `/api/dashboard-overview` | Caller-owned document counts and the five latest uploads |
-| GET | `/api/dashboard-plan` | Daily, weekly, monthly, and quarterly highlights from the user's active structured plan |
+| GET | `/api/dashboard-data` | Aggregated current-user tasks, today's meetings, and document expiry alerts for the dashboard |
+| GET | `/api/dashboard-plan` | Daily, weekly, monthly, and quarterly highlights from the user's active plan; includes today's entries for date-based CSV schedules |
+| GET | `/api/tasks` | User-owned tasks, completion progress, weekly totals, and overdue indicators |
+| POST | `/api/tasks` | Create a manual task with a due date today or later |
+| PATCH | `/api/tasks/{id}` | Update task status; carried-forward tasks require a new future due date |
 | POST | `/api/upload` | multipart `file` + `title` |
 | GET | `/api/documents?q=&limit=&skip=` | Paged caller-owned documents with the matching total count |
 | GET | `/api/documents/{id}` | Caller-owned document metadata and extracted raw text |
@@ -60,9 +68,11 @@ the original to GridFS and creates the MongoDB document record before starting
 text extraction in a background task, so slow OCR does not hold the upload
 response open. OCR failures are reported in `extraction_error`; they no longer
 silently appear as successful empty extraction.
-Plain-text `.txt` uploads are decoded as UTF-8 or BOM-marked UTF-16/UTF-32, with
-invalid byte sequences reported as extraction failures instead of corrupted
-text.
+Plain-text `.txt` and `.csv` uploads are decoded as UTF-8 or BOM-marked
+UTF-16/UTF-32, with invalid byte sequences reported as extraction failures
+instead of corrupted text. CSV rows are extracted as readable text with cells
+separated by ` | `; quoted commas and identifier strings (including leading
+zeroes) are preserved.
 PDF pages without embedded text and supported image uploads use PaddleOCR. Image
 OCR enables PaddleOCR's document-orientation classifier, disables document
 unwarping and text-line orientation, and runs on CPU with OneDNN disabled.
@@ -104,19 +114,29 @@ raw OCR lines as a summary. When the local model is unavailable, the same
 structured summary is generated directly from saved text. Poor-quality OCR
 with no reliable details is marked `needs_review`. A prompt-version change
 marks older cached summaries stale so the startup worker can regenerate them.
-The dashboard opens to a personal overview of the authenticated user's uploaded
-plans and documents, including total uploads, completed text extraction, current
-processing count, and the five latest uploads. Structured plans with an explicit
+The dashboard overview API returns a personal overview of the authenticated
+user's uploaded plans and documents, including total uploads, completed text
+extraction, current processing count, and the five latest uploads. Structured plans with an explicit
 `Period:` date range and `YEAR n / QUARTER n` and `YEAR n / MONTH n` sections
 also show today's weekday focus and routine, this week's activities and due
 dates, the current plan month's focus and review date, and the current quarter's
 focus and review milestone. Summaries are derived from that user's saved
 extracted text; older `.txt` uploads that were saved before text extraction was
-supported can be re-extracted from the overview or Documents view. Plans
-outside their date range are identified as inactive rather than shown as
-today's schedule. The paginated activity history is available in its own view.
-The separate AI Assistant view loads saved documents in pages and displays one
-assistant-style message per document.
+supported can be re-extracted with `POST /api/documents/{id}/extract-text`. CSV
+schedule uploads with date, activity, and optional time/category columns are
+also parsed into dated dashboard agenda entries; today's activities appear in
+the agenda, every valid CSV row is synchronized as a task with saved checkbox
+status, and meeting-category rows populate the meetings panel. Plans outside
+their date range are identified as inactive rather than shown as today's
+schedule. Task tracking generates tasks only from explicit weekday
+themes and monthly/quarterly goals and reviews; it does not infer additional
+deliverables. Generated tasks are synchronized idempotently for the selected
+plan, and users can add manual tasks. Tasks support Pending, In Progress,
+Completed, Blocked, Carried Forward, and Skipped statuses. The tracker shows
+completion progress, this week's completion, and overdue tasks; carried-forward
+tasks require a new due date after today. Paginated activity history is
+available through `GET /api/activity`.
+The documents API returns saved documents and their source-backed summaries.
 Deterministically extracted names,
 identifiers, dates, contact details, insurance values, and marks/result lines
 are derived from saved text; expiry countdowns are calculated by the backend.
@@ -140,6 +160,7 @@ no separate records or collection migration is needed.
 
 - **`users`** — `name`, `email` (unique index), `phone`, `password_hash` (bcrypt), `created_at`
 - **`documents`** — `user_id` (ObjectId ref), `title`, `filename`, `content_type`, `size`, `gridfs_id`, `extracted_text`, `extraction_status`, `extraction_error`, `uploaded_at`; optional summary cache/status fields are stored on the same record; index `(user_id, uploaded_at desc)`
+- **`tasks`** — `user_id`, plan/source identifiers for generated tasks or manual task metadata, `title`, `description`, `task_date`, `due_date`, `expiry_date`, `status`, and timestamps; indexes support per-user generated-task uniqueness and due-date lookup
 - **`user_files.files` / `user_files.chunks`** — GridFS bucket holding the bytes
 
 ## Per-user isolation
