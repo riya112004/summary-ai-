@@ -120,6 +120,18 @@ summary_doc_ids: set[str] = set()
 summary_semaphore = asyncio.Semaphore(1)
 summary_recovery_task: Optional[asyncio.Task] = None
 
+
+def _document_user_id(doc: dict) -> Optional[ObjectId]:
+    user_id = doc.get("user_id")
+    if not isinstance(user_id, ObjectId):
+        logger.error(
+            "Skipping document %s with missing or invalid user_id",
+            doc.get("_id"),
+        )
+        return None
+    return user_id
+
+
 # Configure logging to print to terminal at every step
 logging.basicConfig(
     level=logging.INFO,
@@ -174,9 +186,12 @@ async def startup():
     async for doc in db.documents.find({
         "extracted_text": {"$exists": True, "$nin": ["", None]},
     }):
+        user_id = _document_user_id(doc)
+        if user_id is None:
+            continue
         if doc.get("extraction_status") != "completed":
             await db.documents.update_one(
-                {"_id": doc["_id"], "user_id": doc["user_id"]},
+                {"_id": doc["_id"], "user_id": user_id},
                 {"$set": {
                     "extraction_status": "completed",
                     "extraction_error": None,
@@ -184,14 +199,14 @@ async def startup():
             )
         if doc.get("summary_status") == "failed":
             await db.documents.update_one(
-                {"_id": doc["_id"], "user_id": doc["user_id"]},
+                {"_id": doc["_id"], "user_id": user_id},
                 {"$set": {
                     "summary_status": "pending",
                     "summary_attempts": 0,
                     "summary_error": None,
                 }},
             )
-        _schedule_summary(doc["_id"], doc["user_id"])
+        _schedule_summary(doc["_id"], user_id)
     summary_recovery_task = asyncio.create_task(_recover_stale_summary_jobs())
     async for doc in db.documents.find({
         "extraction_status": "pending",
@@ -201,8 +216,11 @@ async def startup():
             {"extracted_text": None},
         ],
     }):
+        user_id = _document_user_id(doc)
+        if user_id is None:
+            continue
         task = asyncio.create_task(
-            _process_document_extraction(doc["_id"], doc["user_id"])
+            _process_document_extraction(doc["_id"], user_id)
         )
         _schedule_extraction(task)
 
@@ -1693,10 +1711,13 @@ async def _recover_stale_summary_jobs():
                 "extracted_text": {"$exists": True, "$nin": ["", None]},
             })
             async for doc in cursor:
+                user_id = _document_user_id(doc)
+                if user_id is None:
+                    continue
                 result = await db.documents.update_one(
                     {
                         "_id": doc["_id"],
-                        "user_id": doc["user_id"],
+                        "user_id": user_id,
                         "summary_status": "processing",
                         "summary_started_at": doc.get("summary_started_at"),
                     },
@@ -1706,7 +1727,7 @@ async def _recover_stale_summary_jobs():
                     logger.warning(
                         "Re-queued stale summary job for document %s", doc["_id"]
                     )
-                    _schedule_summary(doc["_id"], doc["user_id"])
+                    _schedule_summary(doc["_id"], user_id)
         except Exception:
             logger.exception("Summary job recovery scan failed")
 

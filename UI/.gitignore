@@ -6,3 +6,4 @@ tests/
 !tests/
 tests/*
 !tests/test_tabular_schedule.py
+!tests/test_startup_document_ownership.py
