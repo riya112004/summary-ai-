@@ -188,6 +188,15 @@ function localDate(){return now.getFullYear()+"-"+String(now.getMonth()+1).padSt
 function dateLabel(value){var d=new Date(value+"T00:00:00");return Number.isNaN(d.getTime())?value:d.toLocaleDateString("en-IN",{weekday:"short",day:"numeric",month:"short"})}
 function minuteHour(value){return typeof value==="number"?value/60:null}
 function taskTime(value){return /^\d{1,2}:\d{2}\s*(AM|PM)$/i.test(value)?value:/^\d{1,2}:\d{2}$/.test(value)?fmtTime(value):dateLabel(value)}
+function taskMinute(value){
+  var match=/^\s*(\d{1,2}):(\d{2})\s*(AM|PM)?\s*$/i.exec(String(value||""));
+  if(!match)return null;
+  var hour=Number(match[1]),minute=Number(match[2]),meridiem=(match[3]||"").toUpperCase();
+  if(minute>59)return null;
+  if(meridiem){if(hour<1||hour>12)return null;hour=hour%12+(meridiem==="PM"?12:0)}
+  else if(hour>24||(hour===24&&minute!==0))return null;
+  return hour*60+minute;
+}
 
 async function loadDashboard(){
   var response=await fetch("/api/dashboard-data",{credentials:"same-origin"});
@@ -208,6 +217,11 @@ async function loadDashboard(){
       pri:String(task.priority||"med").toLowerCase(),
       done:task.status==="Completed"
     };
+  }).sort(function(a,b){
+    var aMinute=taskMinute(a.due),bMinute=taskMinute(b.due);
+    if(aMinute===null)return bMinute===null?a.title.localeCompare(b.title):1;
+    if(bMinute===null)return -1;
+    return aMinute-bMinute||a.title.localeCompare(b.title);
   });
   DATA.meetings=(result.meetings||[]).filter(function(meeting){
     return meeting.start_minute!=null&&meeting.end_minute!=null;

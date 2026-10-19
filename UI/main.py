@@ -39,6 +39,7 @@ from document_intelligence import (
     validate_extractive_summary,
 )
 from plan_intelligence import (
+    _tabular_time,
     build_tabular_schedule_summary,
     build_plan_schedule_summary,
     build_plan_tasks,
@@ -2013,6 +2014,16 @@ def _task_response(task: dict, today: date) -> dict:
     }
 
 
+def _task_sort_key(task: dict) -> tuple[str, bool, int, str]:
+    start_minute = _tabular_time(task.get("start_time") or "")
+    return (
+        task["due_date"],
+        start_minute is None,
+        start_minute if start_minute is not None else 0,
+        task.get("title") or "",
+    )
+
+
 @app.get("/api/dashboard-plan")
 async def dashboard_plan(user=Depends(current_user)):
     selected_plan = await _active_plan_document_for_user(user["_id"])
@@ -2075,6 +2086,8 @@ async def list_tasks(user=Depends(current_user)):
             or response["task_type"] == "csv_schedule"
         ):
             visible_tasks.append(response)
+
+    visible_tasks.sort(key=_task_sort_key)
 
     return {
         "tasks": visible_tasks,
