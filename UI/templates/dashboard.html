@@ -38,15 +38,6 @@ h1{font-size:28px;line-height:1.2;margin:0;font-weight:600;letter-spacing:-.01em
 .stat span{font-size:13px;color:var(--mute)}
 .stat.alert b{color:var(--warn)}
 section.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:18px 20px;min-width:0}
-.plan-card{margin-bottom:16px}
-.plan-title{font-weight:600}
-.plan-focus{margin-top:8px;padding:10px 12px;background:var(--brandsoft);border-radius:6px}
-.plan-focus small,.plan-milestones small{color:var(--mute)}
-.plan-focus p,.plan-milestones p{margin:2px 0 0}
-.plan-milestones{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:12px}
-.plan-milestones[hidden]{display:none}
-.plan-milestones:empty{display:none}
-.plan-status{font-size:12px;color:var(--ok)}
 h2{font-size:16px;margin:0;font-weight:600}
 .hd{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;gap:8px}
 .hd small{color:var(--mute);font-size:13px}
@@ -136,16 +127,6 @@ ul{list-style:none;margin:0;padding:0}
     <div class="tl-scroll"><div class="tl-track" id="track"></div></div>
   </section>
 
-  <section class="card plan-card" id="planCard" aria-labelledby="planHeading" hidden>
-    <div class="hd"><h2 id="planHeading">Work plan</h2><div><small id="planPeriod"></small> <small class="plan-status" id="planStatus"></small></div></div>
-    <div class="plan-title" id="planTitle"></div>
-    <div class="plan-focus"><small>Today's focus</small><p id="planFocus"></p><p class="meta" id="planRoutine"></p></div>
-    <div class="plan-milestones" id="planMilestones">
-      <div><small id="planMonthLabel">Monthly focus</small><p id="planMonth"></p></div>
-      <div><small id="planQuarterLabel">Quarterly focus</small><p id="planQuarter"></p></div>
-    </div>
-  </section>
-
   <div class="grid">
     <section class="card" aria-labelledby="hTasks">
       <div class="hd"><h2 id="hTasks">Tasks due today</h2>
@@ -205,7 +186,6 @@ async function loadDashboard(){
   if(!response.ok)throw new Error(result.detail||"Could not load dashboard data.");
   var today=localDate();
   DATA.user=result.user&&result.user.name||"there";
-  DATA.plan=result.plan||null;
   DATA.tasks=(result.tasks||[]).filter(function(task){
     return task.status!=="Skipped"&&(task.task_date===today||task.due_date===today);
   }).map(function(task){
@@ -243,34 +223,7 @@ async function loadDashboard(){
       days:details.days_remaining
     };
   }).filter(function(doc){return typeof doc.days==="number"&&doc.days>=0&&doc.days<=5});
-  header();timeline();planOverview();tasks();meetings();docs();
-}
-
-function planOverview(){
-  var plan=DATA.plan;
-  $("planCard").hidden=!plan;
-  if(!plan)return;
-  var schedule=plan.schedule||{},today=schedule.today||{};
-  var month=schedule.month||schedule.next_month;
-  var quarter=schedule.quarter||schedule.next_quarter;
-  $("planTitle").textContent=plan.title||"Work plan";
-  $("planPeriod").textContent=schedule.plan_start&&schedule.plan_end
-    ?dateLabel(schedule.plan_start)+" – "+dateLabel(schedule.plan_end)
-    :"";
-  $("planStatus").textContent="";
-  $("planFocus").textContent=today.focus||"No focus is listed for today.";
-  $("planRoutine").textContent=today.routine||"";
-  $("planStatus").textContent=schedule.in_plan_period===true?"Active today":
-    schedule.in_plan_period===false?"Outside plan period":"";
-  $("planMonthLabel").textContent=schedule.month?"Monthly focus":"Next monthly focus";
-  $("planMonth").textContent=month
-    ?(month.focus||("Month "+month.number+" ("+dateLabel(month.start)+" – "+dateLabel(month.end)+")"))
-    :"No monthly focus available.";
-  $("planQuarterLabel").textContent=schedule.quarter?"Quarterly focus":"Next quarterly focus";
-  $("planQuarter").textContent=quarter
-    ?(quarter.focus||("Q"+quarter.number+" "+(quarter.title||"")+" ("+dateLabel(quarter.start)+" – "+dateLabel(quarter.end)+")"))
-    :"No quarterly focus available.";
-  $("planMilestones").hidden=!month&&!quarter;
+  header();timeline();tasks();meetings();docs();
 }
 
 function header(){
